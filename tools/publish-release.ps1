@@ -220,11 +220,12 @@ if ($UploadGitHub) {
   if ($hasInst) { Assert-BinaryMagic $instPath ([byte[]]@(0x4D, 0x5A)) '安装包' }
   if ($hasPort) { Assert-BinaryMagic $portPath ([byte[]]@(0x50, 0x4B, 0x03, 0x04)) '便携包' }
 
-  # 严格保证二进制资产优先上传，SHA256SUMS.txt 次之，latest.json 最后上传
-  $files = @()
-  if ($hasInst) { $files += $instPath }
-  if ($hasPort) { $files += $portPath }
-  $files += @($sumsPath, $latestPath)
+  # 严格保证原子发布：新建 Release 时先以 --draft 创建并上传二进制与校验表，
+  # 再单独串行上传 latest.json，最后解除草稿态，彻底消除并行上传期间客户端拉到 404 资产的竞态窗口。
+  $binFiles = @()
+  if ($hasInst) { $binFiles += $instPath }
+  if ($hasPort) { $binFiles += $portPath }
+  $binFiles += $sumsPath
 
   $tag = "v$Version"
   $tmpBody = Join-Path ([IO.Path]::GetTempPath()) "shipforge_release_notes_${Version}.md"
@@ -246,16 +247,20 @@ if ($UploadGitHub) {
       Write-Host "正在更新已存在的 Release $tag ($GitHubRepo)…" -ForegroundColor Cyan
       & $gh release edit $tag --repo $GitHubRepo --title "ShipForge $tag" --notes-file $tmpBody
       if ($LASTEXITCODE -ne 0) { throw "gh release edit 失败（退出码 $LASTEXITCODE）" }
-      foreach ($f in $files) {
+      foreach ($f in ($binFiles + @($latestPath))) {
         & $gh release upload $tag $f --repo $GitHubRepo --clobber
         if ($LASTEXITCODE -ne 0) { throw "gh release upload 失败：$f（退出码 $LASTEXITCODE）" }
       }
     } else {
-      $args = @('release', 'create', $tag) + $files + @('--repo', $GitHubRepo, '--title', "ShipForge $tag", '--notes-file', $tmpBody)
-      if ($Channel -eq 'beta') { $args += '--prerelease' }
-      Write-Host "正在上传 Release $tag 到 GitHub ($GitHubRepo)…" -ForegroundColor Cyan
-      & $gh @args
-      if ($LASTEXITCODE -ne 0) { throw "gh release create 失败（退出码 $LASTEXITCODE）" }
+      $createArgs = @('release', 'create', $tag) + $binFiles + @('--repo', $GitHubRepo, '--title', "ShipForge $tag", '--notes-file', $tmpBody, '--draft')
+      if ($Channel -eq 'beta') { $createArgs += '--prerelease' }
+      Write-Host "正在原子上传 Release $tag 到 GitHub ($GitHubRepo)…" -ForegroundColor Cyan
+      & $gh @createArgs
+      if ($LASTEXITCODE -ne 0) { throw "gh release create (draft) 失败（退出码 $LASTEXITCODE）" }
+      & $gh release upload $tag $latestPath --repo $GitHubRepo --clobber
+      if ($LASTEXITCODE -ne 0) { throw "gh release upload (latest.json) 失败（退出码 $LASTEXITCODE）" }
+      & $gh release edit $tag --repo $GitHubRepo --draft=false
+      if ($LASTEXITCODE -ne 0) { throw "gh release publish (--draft=false) 失败（退出码 $LASTEXITCODE）" }
     }
   } finally {
     if (Test-Path -LiteralPath $tmpBody) {

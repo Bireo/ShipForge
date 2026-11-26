@@ -1826,6 +1826,9 @@ pub fn download_and_verify_to(
     cancel: &AtomicBool,
     app: Option<&AppHandle>,
 ) -> Result<StagedInfo> {
+    if !matches!(package_kind, "installer" | "portable") {
+        bail!("未知的更新包类型：{package_kind}");
+    }
     let cur = SemVer::parse(env!("CARGO_PKG_VERSION"))?;
     let target_ver = SemVer::parse(version)?;
     if target_ver <= cur {
@@ -2173,6 +2176,9 @@ pub fn find_portable_payload_root(stage_dir: &Path) -> Result<PathBuf> {
 }
 
 pub fn validate_staged_before_install(updates_root: &Path, staged: &StagedInfo) -> Result<PathBuf> {
+    if !matches!(staged.package_kind.as_str(), "installer" | "portable") {
+        bail!("未知的更新包类型：{}", staged.package_kind);
+    }
     let cur = SemVer::parse(env!("CARGO_PKG_VERSION"))?;
     let target = SemVer::parse(&staged.version)?;
     if target <= cur {
@@ -2805,9 +2811,17 @@ pub async fn updater_install(
                 }
                 let _ = fs::remove_dir_all(&stage_dir);
             }
-            extract_portable_zip_safe(&file, &stage_dir)
-                .map_err(|e| format!("解压便携更新包失败：{e:#}"))?;
-            let payload = find_portable_payload_root(&stage_dir).map_err(|e| format!("{e:#}"))?;
+            if let Err(e) = extract_portable_zip_safe(&file, &stage_dir) {
+                let _ = fs::remove_dir_all(&stage_dir);
+                return Err(format!("解压便携更新包失败：{e:#}"));
+            }
+            let payload = match find_portable_payload_root(&stage_dir) {
+                Ok(p) => p,
+                Err(e) => {
+                    let _ = fs::remove_dir_all(&stage_dir);
+                    return Err(format!("{e:#}"));
+                }
+            };
             Ok(payload)
         } else {
             Ok(file)

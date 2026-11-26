@@ -546,8 +546,8 @@ function renderUpdatesPane(container, app, isAlive) {
           </div>
           <div class="sf-row-ctrl">
             <div class="sf-segmented" role="radiogroup" aria-label="更新通道">
-              <button class="sf-seg-btn ${ch === "stable" ? "active" : ""}" data-upd-ch="stable" type="button">正式版</button>
-              <button class="sf-seg-btn ${ch === "beta" ? "active" : ""}" data-upd-ch="beta" type="button">测试版</button>
+              <button class="sf-seg-btn ${ch === "stable" ? "active" : ""}" data-upd-ch="stable" type="button" ${downloading ? "disabled" : ""}>正式版</button>
+              <button class="sf-seg-btn ${ch === "beta" ? "active" : ""}" data-upd-ch="beta" type="button" ${downloading ? "disabled" : ""}>测试版</button>
             </div>
           </div>
         </div>
@@ -617,6 +617,9 @@ function renderUpdatesPane(container, app, isAlive) {
         })
       );
     }
+
+    const checkBtn = container.querySelector("#updCheckBtn");
+    if (checkBtn) checkBtn.disabled = Boolean(downloading || checking);
   };
 
   const paintResult = () => {
@@ -851,10 +854,17 @@ function renderUpdatesPane(container, app, isAlive) {
       if (ev.payload.phase === "ready" || ev.payload.phase === "error") {
         downloading = false;
         cancelling = false;
+        syncDlBar(null);
+        if (ev.payload.phase === "ready") {
+          refreshStatus();
+        } else {
+          paintSummaryAndSettings();
+          paintResult();
+        }
       } else {
         downloading = true;
+        syncDlBar(ev.payload);
       }
-      syncDlBar(ev.payload);
     }
   })
     .then((u) => {
