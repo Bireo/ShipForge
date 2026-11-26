@@ -1,0 +1,32 @@
+[package]
+name = "shipforge"
+version = "1.4.0"
+edition = "2021"
+description = "Universal desktop build, packaging, versioning, and release studio"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+anyhow = "1"
+chrono = { version = "0.4", features = ["clock"] }
+regex = "1"
+rfd = "0.15"
+sha2 = "0.10"
+walkdir = "2.5"
+flate2 = { version = "1.1", default-features = false, features = ["zlib-rs"] }
+tar = "0.4"
+zip = { version = "9.6", default-features = false, features = ["deflate-flate2", "time"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Globalization", "Win32_System_Threading", "Win32_Security_Cryptography", "Win32_Storage_FileSystem", "Win32_System_SystemInformation", "Win32_Networking_WinHttp"] }
+
+[profile.release]
+opt-level = "s"
+lto = false
+codegen-units = 16
+incremental = true
+panic = "abort"
+strip = true

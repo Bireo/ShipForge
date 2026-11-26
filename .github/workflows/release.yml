@@ -1,0 +1,33 @@
+name: Publish ShipForge Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: 'Release channel (stable or beta)'
+        required: true
+        default: 'stable'
+
+permissions:
+  contents: write
+
+jobs:
+  publish-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Generate release manifest (attach local artifacts or build in CI)
+        shell: pwsh
+        run: |
+          $ver = (Get-Content src\src-tauri\tauri.conf.json -Raw | ConvertFrom-Json).version
+          Write-Host "Target version: $ver"
+          if ((Test-Path "release\ShipForge_${ver}_x64-setup.exe") -or (Test-Path "release\ShipForge_${ver}_x64-portable.zip")) {
+            pwsh -NoProfile -File .\tools\publish-release.ps1 -GitHubRepo "${{ github.repository }}" -Channel "${{ inputs.channel || 'stable' }}"
+          } else {
+            Write-Host "请先在本地执行 .\build.ps1 生成安装包与便携包，再使用 tools\publish-release.ps1 -UploadGitHub 推送更新。"
+          }

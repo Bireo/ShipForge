@@ -1,0 +1,15 @@
+# 构建产物：只跟踪源码、文档与脚本，二进制不进 Git 历史
+/shipforge.exe
+/WebView2Loader.dll
+/release/
+/src/src-tauri/target/
+target/
+
+# 本地缓存与临时文件
+/.build/
+/.tmp/
+*.pdb
+*.log
+.vscode/
+Thumbs.db
+desktop.ini

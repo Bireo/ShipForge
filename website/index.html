@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ShipForge · 轻筑 — Windows 构建与发布工作台</title>
+  <meta name="description" content="ShipForge（轻筑）：面向 Windows 开发者的本地构建、分包分析、版本同步与多平台发布桌面工具，基于 Tauri v2 + Rust，MIT 开源。">
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" type="image/png" href="assets/icon-128.png">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="container header-inner">
+      <a class="brand" href="#top">
+        <img src="assets/icon-128.png" alt="ShipForge" width="28" height="28">
+        <span>ShipForge · 轻筑</span>
+      </a>
+      <nav class="site-nav">
+        <a href="#features" data-i18n="nav.features">功能</a>
+        <a href="#workflow" data-i18n="nav.workflow">工作流</a>
+        <a href="#download" data-i18n="nav.download">下载</a>
+      </nav>
+      <div class="header-actions">
+        <button type="button" class="pill-btn" id="langToggle">EN</button>
+        <a class="pill-btn" href="https://github.com/3347567186/ShipForge" target="_blank" rel="noopener">
+          <span>GitHub</span>
+          <span class="mono" id="starCount" hidden></span>
+        </a>
+        <a class="btn-primary" href="#download" data-i18n="nav.get">下载</a>
+      </div>
+    </div>
+  </header>
+
+  <main id="top">
+    <section class="hero container">
+      <div class="hero-badge mono" id="verBadge">Windows 10/11 x64 · MIT</div>
+      <h1 data-i18n="hero.title">把本地编译、分包、版本同步和发版收进一个桌面窗口</h1>
+      <p class="hero-sub" data-i18n="hero.sub">
+        面向 Windows 本地开发者的多框架构建与发布工作台。支持 Tauri、Rust、Node、Python、Go、.NET、Flutter 等项目，直接发布到 GitHub / Gitee / GitLab / Gitea，内置官方自动更新。
+      </p>
+      <div class="hero-actions">
+        <a class="btn-primary btn-lg" id="heroSetupBtn" href="https://github.com/3347567186/ShipForge/releases/latest" data-i18n="hero.dlSetup">下载安装版 (.exe)</a>
+        <a class="btn-ghost btn-lg" id="heroPortableBtn" href="https://github.com/3347567186/ShipForge/releases/latest" data-i18n="hero.dlPort">下载便携版 (.zip)</a>
+      </div>
+      <div class="hero-meta mono" id="heroMeta">正在读取最新版本信息…</div>
+    </section>
+
+    <section class="section container" id="features">
+      <h2 data-i18n="feat.heading">核心功能</h2>
+      <div class="grid-3">
+        <article class="card">
+          <h3 data-i18n="feat.f1.t">多框架识别与前置自检</h3>
+          <p data-i18n="feat.f1.d">自动识别 Rust、Node/TS、Python、Go、.NET、Flutter、C++、Java 与常见打包外壳，按需检查编译器与本地依赖，确认后再补全。</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="feat.f2.t">体积分析与安全分包</h3>
+          <p data-i18n="feat.f2.d">扫描项目体积分布和大文件，默认拦截 .env、私钥和 .git，支持按仓库单文件大小限制切分分卷并附校验清单。</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="feat.f3.t">多配置版本原子同步</h3>
+          <p data-i18n="feat.f3.d">统一同步 Cargo.toml、tauri.conf.json、package.json、pyproject.toml 等版本源，自动读取或回写变更记录。</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="feat.f4.t">多平台原生流式发布</h3>
+          <p data-i18n="feat.f4.d">基于 WinHTTP 直接上传至 GitHub、Gitee、GitLab、Gitea，令牌使用 Windows DPAPI 加密保存，支持线上编辑与撤回。</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="feat.f5.t">事务回滚与成品保护</h3>
+          <p data-i18n="feat.f5.d">构建或发布中途失败、取消时自动回滚未完成的版本与本地提交；已验收成品支持免重编直接补传发布。</p>
+        </article>
+        <article class="card">
+          <h3 data-i18n="feat.f6.t">内置自动更新</h3>
+          <p data-i18n="feat.f6.d">支持安装版与便携版在线检测 GitHub Releases 新版本，强制核验 SHA-256 与文件头，便携版更新失败自动回滚旧版。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="section container" id="workflow">
+      <h2 data-i18n="wf.heading">本地构建与推送更新</h2>
+      <pre class="code-box mono"><code>git clone https://github.com/3347567186/ShipForge.git
+cd ShipForge
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Bump patch
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1 -UploadGitHub</code></pre>
+    </section>
+
+    <section class="section container" id="download">
+      <h2 data-i18n="dl.heading">下载最新版本</h2>
+      <div class="dl-grid">
+        <div class="card">
+          <h3 data-i18n="dl.setupTitle">Windows 安装版 (NSIS)</h3>
+          <p class="muted" id="dlSetupMeta">ShipForge_x64-setup.exe</p>
+          <a class="btn-primary" id="dlSetupLink" href="https://github.com/3347567186/ShipForge/releases/latest" data-i18n="dl.btn">立即下载</a>
+        </div>
+        <div class="card">
+          <h3 data-i18n="dl.portTitle">Windows 便携版 (ZIP)</h3>
+          <p class="muted" id="dlPortMeta">ShipForge_x64-portable.zip</p>
+          <a class="btn-ghost" id="dlPortLink" href="https://github.com/3347567186/ShipForge/releases/latest" data-i18n="dl.btn">立即下载</a>
+        </div>
+      </div>
+      <div class="notes-card card" id="notesCard" hidden>
+        <h3 data-i18n="dl.notes">更新内容</h3>
+        <pre class="notes-pre" id="releaseNotes"></pre>
+      </div>
+    </section>
+  </main>
+
+  <footer class="site-footer container">
+    <span>ShipForge · MIT License</span>
+    <a href="https://github.com/3347567186/ShipForge/releases" target="_blank" rel="noopener">GitHub Releases</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

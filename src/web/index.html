@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    try {
+      const saved = localStorage.getItem("color-scheme");
+      document.querySelector('meta[name="color-scheme"]').content =
+        saved === "light" || saved === "dark" ? saved : "light dark";
+      if (localStorage.getItem("sf-accent") === "blue") {
+        document.documentElement.dataset.accent = "blue";
+      }
+    } catch {}
+  </script>
+  <title>ShipForge · 轻筑</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- 8-direction frameless window resize handles -->
+  <div class="win-resize r-n" data-resize="North"></div>
+  <div class="win-resize r-s" data-resize="South"></div>
+  <div class="win-resize r-e" data-resize="East"></div>
+  <div class="win-resize r-w" data-resize="West"></div>
+  <div class="win-resize r-nw" data-resize="NorthWest"></div>
+  <div class="win-resize r-ne" data-resize="NorthEast"></div>
+  <div class="win-resize r-sw" data-resize="SouthWest"></div>
+  <div class="win-resize r-se" data-resize="SouthEast"></div>
+
+  <div class="app-shell" id="appShell">
+    <!-- 44px Unified macOS Sequoia Toolbar -->
+    <header class="titlebar" id="titlebar">
+      <div class="toolbar-left" data-tauri-drag-region>
+        <button class="icon-btn" id="btnToggleSidebar" type="button" title="折叠或展开侧栏 (Ctrl+B)" aria-label="切换侧栏">
+          <svg viewBox="0 0 20 20" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M7.5 3.5v13"/>
+          </svg>
+        </button>
+        <div class="tb-breadcrumb" id="tbBreadcrumb" data-tauri-drag-region>
+          <span class="tb-crumb-proj" id="tbCrumbProj">ShipForge</span>
+          <span class="tb-crumb-sep" aria-hidden="true">/</span>
+          <span class="tb-crumb-page" id="tbCrumbPage">发版总览</span>
+        </div>
+        <button class="status-chip chip-ok hidden" id="tbServerBadge" type="button" title="查看本机测试更新源">127.0.0.1</button>
+        <div class="tb-drag-spacer" data-tauri-drag-region></div>
+      </div>
+
+      <div class="toolbar-center" data-tauri-drag-region>
+        <div class="sf-segmented hidden" id="tbSubTabs" role="tablist" aria-label="页面分段切换"></div>
+      </div>
+
+      <div class="toolbar-right" data-tauri-drag-region>
+        <div class="tb-drag-spacer" data-tauri-drag-region></div>
+
+        <!-- Runtime Dynamic Progress Capsule -->
+        <div class="exec-capsule" id="execProgressWrap" aria-hidden="true">
+          <button class="exec-capsule-main" id="btnExecViewTerm" type="button" title="点击打开执行终端查看详情">
+            <span class="exec-dot" id="execDot"></span>
+            <span class="exec-stage-label" id="execStageLabel">准备中…</span>
+            <span class="mono exec-pct" id="execPctText">0%</span>
+            <span class="mono exec-elapsed" id="execElapsedText">0.0s</span>
+          </button>
+          <button class="exec-capsule-btn stop hidden" id="btnExecCancel" type="button" title="停止运行中任务" aria-label="停止任务">■</button>
+          <button class="exec-capsule-btn hidden" id="btnExecDismiss" type="button" title="收起进度提示" aria-label="收起进度提示">✕</button>
+          <span class="sr-only" id="execDetailText" role="status" aria-live="polite"></span>
+          <progress class="sr-only" id="execProgressBar" max="100" value="0" aria-labelledby="execStageLabel"></progress>
+        </div>
+
+        <button class="icon-btn" id="btnOpenPalette" type="button" title="Spotlight 命令面板 (Ctrl+K)" aria-label="命令面板">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round">
+            <circle cx="9" cy="9" r="5.5"/><path d="M13.2 13.2L17 17"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnDetectChanges" type="button" title="扫描项目改动与新版本 (F5)" aria-label="变动扫描">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M16.5 10a6.5 6.5 0 1 1-1.6-4.3"/><path d="M16.5 3.8v2.8h-2.8"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnToggleTerm" type="button" title="执行终端 (Ctrl+`)" aria-label="打开终端">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="2.5" y="3.5" width="15" height="13" rx="2.5"/><path d="M6 8l2.5 2L6 12M10.5 12H14"/>
+          </svg>
+          <span class="term-badge-dot hidden" id="tbTermDot"></span>
+        </button>
+        <button class="icon-btn" id="btnOpenManual" type="button" title="使用说明书 (F1)" aria-label="使用说明">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10" cy="10" r="7"/><path d="M8.2 7.8a2 2 0 1 1 2.7 1.9c-.6.3-.9.7-.9 1.4v.4"/><circle cx="10" cy="14.1" r=".6" fill="currentColor" stroke="none"/>
+          </svg>
+        </button>
+        <button class="icon-btn" id="btnOpenPrefs" type="button" title="偏好设置 (Ctrl+,)" aria-label="偏好设置">
+          <svg viewBox="0 0 20 20" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="10" cy="10" r="2.7"/><path d="M10 2.6v1.6M10 15.8v1.6M2.6 10h1.6M15.8 10h1.6M4.8 4.8l1.1 1.1M14.1 14.1l1.1 1.1M15.2 4.8l-1.1 1.1M5.9 14.1l-1.1 1.1"/>
+          </svg>
+          <span class="term-badge-dot hidden" id="tbPrefsUpdDot"></span>
+        </button>
+
+        <div class="win-controls">
+          <button class="win-btn" id="btnWinMin" type="button" aria-label="最小化" title="最小化">
+            <svg viewBox="0 0 12 12" width="10" height="10"><path d="M2 6h8" stroke="currentColor" stroke-width="1.3"/></svg>
+          </button>
+          <button class="win-btn" id="btnWinMax" type="button" aria-label="最大化或还原" title="最大化/还原">
+            <svg viewBox="0 0 12 12" width="10" height="10"><rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+          </button>
+          <button class="win-btn win-close" id="btnWinClose" type="button" aria-label="关闭" title="关闭">
+            <svg viewBox="0 0 12 12" width="10" height="10"><path d="M2.5 2.5l7 7M9.5 2.5l-7 7" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- 2px Top Hairline Progress Bar -->
+      <div class="exec-hairline" id="execHairline" aria-hidden="true">
+        <div class="exec-hairline-fill" id="execHairlineFill"></div>
+      </div>
+    </header>
+
+    <div class="workspace">
+      <!-- 232px Apple Notes Soft Sidebar -->
+      <aside class="sidebar" id="sidebar" aria-label="侧栏导航">
+        <!-- Upper Zone: 5 Core Workspaces -->
+        <nav class="nav-list" id="navList" aria-label="工作区">
+          <button class="nav-item active" data-page="overview" type="button">
+            <span class="nav-ico" data-ico="rocket"></span><span>发版总览</span>
+          </button>
+          <button class="nav-item" data-page="compile" type="button">
+            <span class="nav-ico" data-ico="hammer"></span><span>编译与环境</span>
+          </button>
+          <button class="nav-item" data-page="package" type="button">
+            <span class="nav-ico" data-ico="package"></span><span>分析与分包</span>
+          </button>
+          <button class="nav-item" data-page="release" type="button">
+            <span class="nav-ico" data-ico="cloud"></span><span>产物与仓库</span>
+          </button>
+          <button class="nav-item" data-page="version" type="button">
+            <span class="nav-ico" data-ico="tag"></span><span>版本与源码</span>
+          </button>
+        </nav>
+
+        <div class="sb-divider" aria-hidden="true"></div>
+
+        <!-- Lower Zone: Apple Notes Folders-Style Direct Project List -->
+        <div class="sb-projects-wrap">
+          <div class="sb-section-label">
+            <span>我的项目</span>
+            <span class="sb-proj-count" id="sbProjCount">0</span>
+          </div>
+          <div class="sb-proj-list scroller" id="projectList" role="list"></div>
+        </div>
+
+        <!-- Sidebar Bottom Action Bar -->
+        <div class="sidebar-footer">
+          <div class="sb-action-row">
+            <button class="sb-foot-btn" id="btnAddProject" type="button">+ 导入项目</button>
+            <button class="sb-foot-btn" id="btnDiscoverProjects" type="button">扫描工作区</button>
+          </div>
+          <div class="sb-meta-row">
+            <span class="sb-adapter" id="sbAdapterMeta">-</span>
+            <span class="sb-ver" id="sbAppVer"></span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Main Column -->
+      <div class="main-col" id="mainCol">
+        <!-- External Change Banner -->
+        <div class="watch-bar hidden" id="watchBanner" role="status" aria-live="polite">
+          <div class="watch-bar-left">
+            <span class="dot dot-warn"></span>
+            <span id="watchBannerText">检测到项目改动</span>
+          </div>
+          <div class="field-row">
+            <button class="btn btn-xs btn-primary" id="btnWatchSync" type="button">同步状态</button>
+            <button class="btn btn-xs btn-ghost" id="btnWatchDismiss" type="button">忽略</button>
+          </div>
+        </div>
+
+        <main class="page-viewport scroller" id="pageViewport"></main>
+
+        <!-- Adaptive 5-Mode Interactive Terminal (32px Compact Header) -->
+        <section class="term-shell" id="termShell" data-mode="hidden" data-tone="auto" aria-label="实时交互终端">
+          <div class="term-resize-top" id="termResizeTop" title="拖拽调节高度 · 双击切换半屏"></div>
+          <div class="term-resize-corner" id="termResizeCorner" title="拖拽自由缩放浮窗大小"></div>
+          <div class="term-head" id="termHead">
+            <div class="term-head-left">
+              <span class="term-drag-grip" aria-hidden="true">⋮⋮</span>
+              <span class="term-dot" id="termDot"></span>
+              <strong class="term-title-txt">执行终端</strong>
+              <span class="term-meta" id="termMeta">空闲</span>
+            </div>
+            <div class="term-head-right">
+              <input class="input input-xs term-filter-inp" id="termFilter" type="search" placeholder="筛选日志…" aria-label="筛选日志">
+              <button class="btn btn-xs btn-danger hidden" id="btnCancelTask" type="button">停止</button>
+              <button class="term-tool-btn" id="btnTermTone" type="button" title="切换终端配色（跟随主题 / 深色高对比）">配色</button>
+              <button class="term-tool-btn" id="btnCopyLog" type="button" title="复制全部日志">复制</button>
+              <button class="term-tool-btn" id="btnClearLog" type="button" title="清空日志">清空</button>
+              <span class="term-sep" aria-hidden="true"></span>
+              <button class="term-ico-btn" id="btnTermFloat" type="button" title="浮窗自由拖动 / 停靠底部" aria-label="切换浮窗或停靠">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="3" width="12" height="10" rx="2"/><path d="M6 3v10" opacity=".45"/></svg>
+              </button>
+              <button class="term-ico-btn" id="btnTermMin" type="button" title="缩小为右下角悬浮胶囊" aria-label="缩小终端">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M3.5 11.5h9"/></svg>
+              </button>
+              <button class="term-ico-btn" id="btnTermFull" type="button" title="全屏 / 还原 (Esc)" aria-label="全屏终端">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 6V2.5H6M10 2.5h3.5V6M13.5 10v3.5H10M6 13.5H2.5V10"/></svg>
+              </button>
+              <button class="term-ico-btn" id="btnTermHide" type="button" title="隐藏终端 (Ctrl+`)" aria-label="隐藏终端">
+                <svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+              </button>
+            </div>
+          </div>
+          <div class="term-body scroller" id="termBody" role="log" aria-live="polite"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Minimized Terminal Floating Pill -->
+  <button class="term-mini-pill hidden" id="termMiniPill" type="button" title="点击展开终端">
+    <span class="term-dot" id="termMiniDot"></span>
+    <span id="termMiniLabel">执行终端</span>
+    <span class="mono dim" id="termMiniMeta"></span>
+  </button>
+
+  <!-- Native Modal Dialog -->
+  <dialog id="modalDialog" closedby="any" aria-labelledby="modalTitle">
+    <div class="modal-card">
+      <div class="modal-head">
+        <h1 id="modalTitle">确认操作</h1>
+        <button class="icon-btn" id="modalCloseBtn" type="button" aria-label="关闭弹窗">✕</button>
+      </div>
+      <div class="modal-body scroller" id="modalBody"></div>
+      <div class="modal-foot" id="modalFoot"></div>
+    </div>
+  </dialog>
+
+  <!-- Built-in macOS Sequoia Context Menu (Top-Layer Native Popover + Invisible Cursor Anchor) -->
+  <span id="sfMenuAnchor" class="sf-menu-anchor" aria-hidden="true"></span>
+  <div id="sfContextMenu" popover="auto" class="sf-ctx-popover">
+    <div id="sfContextMenuGroup" focusgroup="menu nomemory" aria-label="快捷操作菜单"></div>
+  </div>
+
+  <div class="toast-stack" id="toastStack" aria-live="polite"></div>
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
