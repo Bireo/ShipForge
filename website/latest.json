@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "version": "1.4.0",
+  "channel": "stable",
+  "pubDate": "2026-11-26T21:53:26+08:00",
+  "minVersion": "",
+  "notes": "## 1.4.0 (2026-11-26) —— 界面去重收口、内置官方在线自动更新与独立 GitHub 仓库部署\n\n- **界面去重与布局收口**（`index.html`、`styles.css`、`preferences.js`、`overview.js`、`version.js`、`manage.js`、`package.js`）：\n  - 删除左侧栏底部重复的「偏好设置 (`Ctrl+,`)」按钮，仅保留顶部工具栏唯一入口（带新版本提示圆点）并重新平衡侧栏底部按钮与版本信息间距。\n  - 统一清理跨页面重复功能按钮：移除「版本与源码」顶栏与「通用与外观 / 当前项目配置」中重复的「打开数据目录」（保留于「存储与扫描」）及重复的「移出此项目」（保留于「当前项目配置」与项目右键菜单）；移除「发版总览」顶栏与工具栏重复的「变动扫描」及重复的「配置向导」入口；移除「分析与分包」顶栏与分段标签重复的切换按钮。\n- **内置官方在线自动更新引擎**（`updater.rs`、`preferences.js`、`app.js`）：\n  - 完整移植三通道容错更新架构（`latest.json` 主源 → 302 标签直链 → GitHub Releases API / 零限流 Atom 预发布源），严格锁定 `3347567186/ShipForge` 官方仓库域名与路径、拦截 HTTPS 降级与非官方重定向。\n  - 支持断点续传、取消下载、SHA-256 与 PE/ZIP 文件头双校验、安装版 (NSIS) 与便携版 (ZIP) 双形态自动升级（便携版解压防 Zip Slip 与 ZIP 炸弹、替换失败自动回滚旧版），且在有运行中构建/发版任务时拒绝中断安装。\n  - 偏好设置新增独立「版本与更新」面板（收口版本信息、通道切换、启动静默检测、缓存清理与离线/远端变更记录同步），启动后延迟 6 秒静默检查更新。\n- **独立 GitHub 仓库与发包推送体系**：新增 `tools/publish-release.ps1`、`LICENSE`、`.gitignore`、中英文 `README`、GitHub Pages 官网及 `.github/workflows` 自动化配置。",
+  "installer": {
+    "file": "ShipForge_1.4.0_x64-setup.exe",
+    "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-setup.exe",
+    "size": 3567860,
+    "sha256": "3b5ceefe22f92ce0863e489ba66ff0ff9dc8ee1139a5ec1d46be46e91a684eab"
+  },
+  "platforms": {
+    "windows-x86_64": {
+      "file": "ShipForge_1.4.0_x64-setup.exe",
+      "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-setup.exe",
+      "size": 3567860,
+      "sha256": "3b5ceefe22f92ce0863e489ba66ff0ff9dc8ee1139a5ec1d46be46e91a684eab"
+    }
+  },
+  "portable": {
+    "file": "ShipForge_1.4.0_x64-portable.zip",
+    "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-portable.zip",
+    "size": 4935926,
+    "sha256": "2651fc8f29f9ef0f1d1248e01387ff93c58a3840ae920574e6ae4168ae0f013d"
+  }
+}

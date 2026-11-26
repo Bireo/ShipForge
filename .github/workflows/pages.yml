@@ -5,7 +5,8 @@ on:
     branches: ["main"]
     paths:
       - "website/**"
-      - "src/src-tauri/icons/**"
+      - "docs/assets/screenshots/**"
+      - "docs/assets/logo.svg"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -24,14 +25,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-      - name: Assemble static site
+      - name: Assemble static site with runtime screenshots
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          mkdir -p _site/assets
+          mkdir -p _site/assets/screenshots
           cp -r website/* _site/
-          cp src/src-tauri/icons/128x128.png _site/assets/icon-128.png
-          cp src/src-tauri/icons/icon.png _site/assets/icon.png
+          cp -r docs/assets/screenshots/* _site/assets/screenshots/
+          cp docs/assets/logo.svg _site/assets/logo.svg
           REV="${GITHUB_SHA::8}"
           sed -i -E "s/(styles\.css|app\.js)(\?v=[^\"']*)?/\1?v=${REV}/g" _site/index.html
           curl -fsSL "https://github.com/${{ github.repository }}/releases/latest/download/latest.json" -o _site/latest.json || true

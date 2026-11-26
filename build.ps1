@@ -246,6 +246,29 @@ console.log('js-syntax: ' + files.length + ' files ok');
     [void]$nodeProc.Start()
     $nodeOut = $nodeProc.StandardOutput.ReadToEndAsync()
     $nodeErr = $nodeProc.StandardError.ReadToEndAsync()
+
+    $webTest = Join-Path $root 'src\web\js\website.selftest.mjs'
+    if (Test-Path -LiteralPath $webTest) {
+      $psiWeb = New-Object System.Diagnostics.ProcessStartInfo
+      $psiWeb.FileName = $node
+      $psiWeb.WorkingDirectory = $root
+      $psiWeb.UseShellExecute = $false
+      $psiWeb.CreateNoWindow = $true
+      $psiWeb.RedirectStandardOutput = $true
+      $psiWeb.RedirectStandardError = $true
+      $psiWeb.StandardOutputEncoding = [Text.Encoding]::UTF8
+      $psiWeb.StandardErrorEncoding = [Text.Encoding]::UTF8
+      [void]$psiWeb.ArgumentList.Add($webTest)
+      $webProc = New-Object System.Diagnostics.Process
+      $webProc.StartInfo = $psiWeb
+      [void]$webProc.Start()
+      $jsCheckProcs.Add([pscustomobject]@{
+        Name = '官网与仓库契约自测'
+        Proc = $webProc
+        Out  = $webProc.StandardOutput.ReadToEndAsync()
+        Err  = $webProc.StandardError.ReadToEndAsync()
+      })
+    }
   }
 
   $rustStampFile = 'D:\Builds\.shipforge-rust-test-stamp'
