@@ -1,5 +1,21 @@
 # ShipForge 变更记录
 
+## 1.5.0 (2026-11-27) —— 全自动静默更新小窗、线上日志与 latest.json 联动同步、仓库切换至 Bireo/ShipForge
+
+- **一键全自动更新，彻底告别手动卸载与安装向导**（`updater_host.rs`、`updater.rs`、`main.rs`、`preferences.js`）：
+  - 点击「一键自动更新」后，主程序自动校验安全边界并退出，无缝切换为独立置顶的品牌进度小窗（`shipforge-updater.exe` 独立宿主与隔离 WebView2 目录，零文件锁冲突）。
+  - 安装版自动通过 NSIS `/S /UPDATE /D=<app_dir>` 执行静默就地升级（跳过旧版卸载确认与向导页），便携版改用纯 Rust 原子备份替换与异常自动回滚，不再依赖隐藏 PowerShell 脚本；完成后自动拉起新版并异步清理临时宿主目录。
+  - 若遇安装目录权限受限，弹窗内直接提供「管理员重试」「手动安装」与「打开原版本」兜底动作，绝不中断失联。
+- **融合 ShipForge 官方 Logo 的专属进度弹窗**（`src/web/updater.html`）：
+  - 以 ShipForge 等距锻造立方体 Logo 为视觉中心：外圈采用语义化 `<progress>` 圆环进度光晕，内置动态旋转蓝图构造环、悬浮脉动熔铸琥珀核心与微抬精密顶盖动效，配合 4 步进度轨道（下载 · 校验 · 安装 · 启动）与浅/深双色自适应主题。
+  - 新增 `--preview-updater` 预览模式与端到端单元测试覆盖。
+- **线上 Release 说明与 `latest.json` 一键联动同步**（`repo_client.rs`、`packager.rs`、`main.rs`、`release.js`、`version.js`）：
+  - 在「产物与仓库 → 线上发行版」编辑面板新增「同步覆盖线上 latest.json」开关，保存 Release 说明时可选仅覆盖更新本地与线上 `latest.json`（不重传安装包/便携包，强制版本一致性与公网 URL / SHA-256 / 远端产物存在性安全门禁，支持 GitHub 含草稿 / Gitee / Gitea / GitLab）。
+  - 在「版本与源码 → 变更日志」撰写与阅读视图新增「同步线上日志」一键按钮，写入变更记录时自动同步本地同版本 `latest.json`。
+- **修复 Git 更新日志草拟器被 `docs:` 提交劫持的 Bug**（`git_ops.rs`、`main.rs`、`version.js`）：
+  - 当区间内存在 `pre-build` 快照或工作区源码/引擎改动且仅有 `docs:`/`chore:` 类提交时，优先在「更新内容」顶部列出源码与子引擎改动摘要及增删行数；草拟接口改为传入真实项目配置与目标版本号。
+- **GitHub 仓库与更新源迁移至 `Bireo/ShipForge`**（`updater.rs`、`updater_host.rs`、`preferences.js`、`tools/publish-release.ps1`、`website/`、`README`）：同步切换在线更新源白名单、发包脚本与 GitHub Pages（`https://bireo.github.io/ShipForge/`）。
+
 ## 1.4.0 (2026-11-26) —— 界面去重收口、内置官方在线自动更新与独立 GitHub 仓库部署
 
 - **界面去重与布局收口**（`index.html`、`styles.css`、`preferences.js`、`overview.js`、`version.js`、`manage.js`、`package.js`）：

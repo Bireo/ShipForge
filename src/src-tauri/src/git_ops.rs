@@ -592,6 +592,16 @@ pub fn normalize_git_rename_path(raw: &str) -> String {
     trimmed.to_string()
 }
 
+fn is_non_code_commit_subject(subject: &str) -> bool {
+    let low = subject.trim().to_ascii_lowercase();
+    for prefix in ["docs:", "docs(", "doc:", "doc(", "style:", "style(", "chore:", "chore(", "ci:", "ci("] {
+        if low.starts_with(prefix) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn format_categorized_file_changes(
     commits: &[String],
     diffs: &[FileDiffSummary],
@@ -617,8 +627,45 @@ pub fn format_categorized_file_changes(
         return None;
     }
 
+    let format_cat_bullet = |label: &str, items: &[&FileDiffSummary]| -> String {
+        let mut total_add: usize = 0;
+        let mut total_del: usize = 0;
+        let mut has_stats = false;
+        let mut names: Vec<String> = Vec::new();
+        for d in items {
+            if let (Some(a), Some(del)) = (d.added, d.deleted) {
+                total_add = total_add.saturating_add(a);
+                total_del = total_del.saturating_add(del);
+                has_stats = true;
+            }
+            if names.len() < 4 {
+                let short = d.path.rsplit('/').next().unwrap_or(&d.path);
+                let token = format!("`{}`", short);
+                if !names.contains(&token) {
+                    names.push(token);
+                }
+            }
+        }
+        let more = if items.len() > names.len() {
+            format!(" 等 {} 个文件", items.len())
+        } else {
+            String::new()
+        };
+        let stat = if has_stats && (total_add > 0 || total_del > 0) {
+            format!("（+{} / -{} 行）", total_add, total_del)
+        } else {
+            String::new()
+        };
+        format!("- **{}**：更新 {}{}{}", label, names.join("、"), more, stat)
+    };
+
+    let has_code_diffs = grouped.contains_key("source")
+        || grouped.contains_key("engine")
+        || grouped.contains_key("config");
+    let has_functional_commit = commits.iter().any(|c| !is_non_code_commit_subject(c));
+
     let mut out = Vec::new();
-    if !commits.is_empty() {
+    if !commits.is_empty() && (!has_code_diffs || has_functional_commit) {
         out.push("### 更新内容".to_string());
         for c in commits.iter().take(12) {
             out.push(format!("- {}", c));
@@ -648,39 +695,29 @@ pub fn format_categorized_file_changes(
                 }
             }
         }
+    } else if !commits.is_empty() && has_code_diffs && !has_functional_commit {
+        // Real code/engine/config changes came from pre-build snapshots or uncommitted edits while
+        // the only non-automated commits in range are docs:/chore:/style: — surface code diffs first
+        // so an unrelated README commit never masquerades as the entire release summary.
+        out.push("### 更新内容".to_string());
+        for (key, label) in [
+            ("source", "核心功能与源码"),
+            ("engine", "子引擎与核心服务"),
+            ("config", "构建脚本与配置"),
+            ("other", "资源与界面素材"),
+        ] {
+            if let Some(items) = grouped.get(key) {
+                out.push(format_cat_bullet(label, items));
+            }
+        }
+        for c in commits.iter().take(8) {
+            out.push(format!("- {}", c));
+        }
     } else {
         out.push("### 本次变动摘要".to_string());
         for (key, label) in cat_order {
             if let Some(items) = grouped.get(key) {
-                let mut total_add: usize = 0;
-                let mut total_del: usize = 0;
-                let mut has_stats = false;
-                let mut names: Vec<String> = Vec::new();
-                for d in items {
-                    if let (Some(a), Some(del)) = (d.added, d.deleted) {
-                        total_add = total_add.saturating_add(a);
-                        total_del = total_del.saturating_add(del);
-                        has_stats = true;
-                    }
-                    if names.len() < 4 {
-                        let short = d.path.rsplit('/').next().unwrap_or(&d.path);
-                        let token = format!("`{}`", short);
-                        if !names.contains(&token) {
-                            names.push(token);
-                        }
-                    }
-                }
-                let more = if items.len() > names.len() {
-                    format!(" 等 {} 个文件", items.len())
-                } else {
-                    String::new()
-                };
-                let stat = if has_stats && (total_add > 0 || total_del > 0) {
-                    format!("（+{} / -{} 行）", total_add, total_del)
-                } else {
-                    String::new()
-                };
-                out.push(format!("- **{}**：更新 {}{}{}", label, names.join("、"), more, stat));
+                out.push(format_cat_bullet(label, items));
             }
         }
     }
@@ -913,17 +950,26 @@ pub fn synthesize_release_notes_from_git(
     format_categorized_file_changes(&commits, &ordered)
 }
 
-pub fn draft_notes_from_git(root: &Path) -> Result<String> {
+pub fn draft_notes_from_git_for_project(
+    root: &Path,
+    project: &ProjectConfig,
+    target_version: &str,
+) -> Result<String> {
     if !root.join(".git").exists() {
         return Err(anyhow!("当前项目不是 Git 仓库"));
     }
-    let mut dummy = ProjectConfig::default();
-    dummy.root = root.to_string_lossy().to_string();
-    dummy.release_dir = "release".into();
-    if let Some(txt) = synthesize_release_notes_from_git(root, &dummy, "") {
+    if let Some(txt) = synthesize_release_notes_from_git(root, project, target_version) {
         return Ok(txt);
     }
     Ok("- 常规优化与问题修复。".into())
+}
+
+#[allow(dead_code)]
+pub fn draft_notes_from_git(root: &Path) -> Result<String> {
+    let mut dummy = ProjectConfig::default();
+    dummy.root = root.to_string_lossy().to_string();
+    dummy.release_dir = "release".into();
+    draft_notes_from_git_for_project(root, &dummy, "")
 }
 
 pub fn git_has_remote(root: &Path) -> bool {
@@ -1498,6 +1544,8 @@ pub fn list_gh_releases(repo: &str) -> Result<Vec<GhReleaseItem>> {
                 .unwrap_or("")
                 .to_string(),
             assets: vec![],
+            manifest_synced: false,
+            manifest_sync_message: String::new(),
         });
     }
     Ok(list)
@@ -2075,6 +2123,45 @@ mod tests {
             .expect("v1.0.2 should synthesize from commits + uncommitted");
         assert!(notes_102.contains("feat(settings): 新增更新日志自动提取"), "notes_102={}", notes_102);
         assert!(notes_102.contains("uncommitted.rs"), "upcoming version should capture uncommitted edit: {}", notes_102);
+
+        // 3. Regression: when a docs: commit coexists with a pre-build commit that changed real code/engine files,
+        //    the synthesized notes MUST surface the code/engine updates right under 「### 更新内容」 before docs:!
+        let formatted = format_categorized_file_changes(
+            &["docs: rewrite README in plain, concise style".into()],
+            &[
+                FileDiffSummary {
+                    path: "src/engine/tidy.py".into(),
+                    category: "engine",
+                    added: Some(420),
+                    deleted: Some(110),
+                    status_tag: "修改".into(),
+                },
+                FileDiffSummary {
+                    path: "src/web/js/pages/cache.js".into(),
+                    category: "source",
+                    added: Some(28),
+                    deleted: Some(15),
+                    status_tag: "修改".into(),
+                },
+                FileDiffSummary {
+                    path: "README.md".into(),
+                    category: "docs",
+                    added: Some(50),
+                    deleted: Some(60),
+                    status_tag: "修改".into(),
+                },
+            ],
+        )
+        .expect("should produce categorized release notes");
+        let pos_src = formatted.find("**核心功能与源码**").expect(&formatted);
+        let pos_eng = formatted.find("**子引擎与核心服务**").expect(&formatted);
+        let pos_doc = formatted.find("docs: rewrite README").expect(&formatted);
+        assert!(
+            pos_src < pos_doc && pos_eng < pos_doc,
+            "code/engine updates must appear BEFORE unrelated docs: commit under ### 更新内容:\n{}",
+            formatted
+        );
+        assert!(formatted.contains("(+420 / -110 行)") || formatted.contains("（+420 / -110 行）"), "{}", formatted);
 
         let _ = fs::remove_dir_all(&base);
     }

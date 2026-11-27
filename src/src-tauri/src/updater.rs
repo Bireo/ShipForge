@@ -3,7 +3,6 @@ use std::ffi::c_void;
 use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::ptr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
@@ -14,17 +13,12 @@ use chrono::Local;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Emitter, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 use zip::ZipArchive;
 
 use crate::config;
 use crate::models::UpdaterConfig;
 use crate::AppState;
-
-#[cfg(windows)]
-use std::os::windows::process::CommandExt;
-#[cfg(windows)]
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// 单次更新清单最大体积（2 MiB），防止恶意超大 JSON 耗尽内存。
 pub const MAX_MANIFEST_BYTES: usize = 2 * 1024 * 1024;
@@ -39,19 +33,19 @@ const MAX_REDIRECTS: usize = 5;
 
 /// 官方内置 GitHub Releases 更新源（独立于 QDisk，指向 ShipForge 专属仓库）。
 pub const OFFICIAL_FEED_URL: &str =
-    "https://github.com/3347567186/ShipForge/releases/latest/download/latest.json";
+    "https://github.com/Bireo/ShipForge/releases/latest/download/latest.json";
 pub const OFFICIAL_LATEST_REDIRECT_URL: &str =
-    "https://github.com/3347567186/ShipForge/releases/latest";
+    "https://github.com/Bireo/ShipForge/releases/latest";
 pub const OFFICIAL_API_LATEST_URL: &str =
-    "https://api.github.com/repos/3347567186/ShipForge/releases/latest";
+    "https://api.github.com/repos/Bireo/ShipForge/releases/latest";
 pub const OFFICIAL_API_RELEASES_URL: &str =
-    "https://api.github.com/repos/3347567186/ShipForge/releases?per_page=8";
+    "https://api.github.com/repos/Bireo/ShipForge/releases?per_page=8";
 pub const OFFICIAL_RELEASES_ATOM_URL: &str =
-    "https://github.com/3347567186/ShipForge/releases.atom";
+    "https://github.com/Bireo/ShipForge/releases.atom";
 pub const OFFICIAL_RELEASES_PAGE: &str =
-    "https://github.com/3347567186/ShipForge/releases";
+    "https://github.com/Bireo/ShipForge/releases";
 pub const OFFICIAL_API_CHANGELOG_URL: &str =
-    "https://api.github.com/repos/3347567186/ShipForge/releases?per_page=20";
+    "https://api.github.com/repos/Bireo/ShipForge/releases?per_page=20";
 
 /// 编译期内嵌完整变更记录，离线状态也可即时查看全部版本历史。
 const EMBEDDED_CHANGELOG_MD: &str = include_str!("../../../CHANGELOG.md");
@@ -466,11 +460,11 @@ pub fn validate_update_url(url: &str, origin_is_remote_https: bool) -> Result<(b
     {
         bail!("安全拦截：更新路径包含非法穿越或编码序列");
     }
-    if host.eq_ignore_ascii_case("github.com") && !path_low.starts_with("/3347567186/shipforge/") {
+    if host.eq_ignore_ascii_case("github.com") && !path_low.starts_with("/bireo/shipforge/") {
         bail!("安全拦截：拒绝从非官方仓库路径下载更新（{path_only}）");
     }
     if host.eq_ignore_ascii_case("api.github.com")
-        && !path_low.starts_with("/repos/3347567186/shipforge/")
+        && !path_low.starts_with("/repos/bireo/shipforge/")
     {
         bail!("安全拦截：拒绝访问非官方仓库 API（{path_only}）");
     }
@@ -538,8 +532,8 @@ pub fn extract_tag_from_release_location(loc: &str) -> Option<String> {
 }
 
 pub fn extract_release_tags_from_atom(xml: &str) -> Vec<String> {
-    const ABS_PREFIX: &str = "https://github.com/3347567186/ShipForge/releases/tag/";
-    const REL_PREFIX: &str = "/3347567186/ShipForge/releases/tag/";
+    const ABS_PREFIX: &str = "https://github.com/Bireo/ShipForge/releases/tag/";
+    const REL_PREFIX: &str = "/Bireo/ShipForge/releases/tag/";
 
     let mut ranked: Vec<(SemVer, String)> = Vec::new();
     let mut cursor = xml;
@@ -1724,6 +1718,10 @@ fn dir_size_bytes(dir: &Path) -> u64 {
     sum
 }
 
+pub(crate) fn sweep_old_updates_keep(keep_dir: &Path) {
+    sweep_old_updates(Some(keep_dir));
+}
+
 fn sweep_old_updates(keep_dir: Option<&Path>) {
     let root = updates_dir();
     let Ok(rd) = fs::read_dir(&root) else { return };
@@ -2206,131 +2204,7 @@ pub fn validate_staged_before_install(updates_root: &Path, staged: &StagedInfo) 
     Ok(canon_file)
 }
 
-#[cfg(windows)]
-fn spawn_installer_bootstrap(installer_path: &Path, silent: bool) -> Result<()> {
-    let cur_pid = std::process::id().to_string();
-    let cur_exe = std::env::current_exe()
-        .context("无法获取当前程序路径")?
-        .to_string_lossy()
-        .to_string();
-    let script = if silent {
-        r#"
-$ErrorActionPreference = 'SilentlyContinue'
-$pidVal = [int]$env:_SF_UPD_PID
-for ($i = 0; $i -lt 150; $i++) {
-  if (-not (Get-Process -Id $pidVal -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Milliseconds 100
-}
-$p = Start-Process -FilePath $env:_SF_UPD_FILE -ArgumentList '/S' -PassThru -Wait
-if ($p -and $p.ExitCode -eq 0 -and (Test-Path -LiteralPath $env:_SF_UPD_EXE)) {
-  Start-Process -FilePath $env:_SF_UPD_EXE
-}
-"#
-    } else {
-        r#"
-$ErrorActionPreference = 'SilentlyContinue'
-$pidVal = [int]$env:_SF_UPD_PID
-for ($i = 0; $i -lt 150; $i++) {
-  if (-not (Get-Process -Id $pidVal -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Milliseconds 100
-}
-Start-Process -FilePath $env:_SF_UPD_FILE
-"#
-    };
-    Command::new("powershell")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", script])
-        .env("_SF_UPD_PID", cur_pid)
-        .env("_SF_UPD_FILE", installer_path.to_string_lossy().to_string())
-        .env("_SF_UPD_EXE", cur_exe)
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .context("启动安装更新引导器失败")?;
-    Ok(())
-}
-
-#[cfg(windows)]
-fn spawn_portable_swap_bootstrap(
-    payload_root: &Path,
-    app_dir: &Path,
-    backup_dir: &Path,
-    stage_root: &Path,
-) -> Result<()> {
-    let cur_pid = std::process::id().to_string();
-    let script = r#"
-$ErrorActionPreference = 'Stop'
-$pidVal = [int]$env:_SF_UPD_PID
-$appDir = $env:_SF_UPD_APP
-$srcDir = $env:_SF_UPD_SRC
-$bakDir = $env:_SF_UPD_BAK
-$stgDir = $env:_SF_UPD_STG
-
-for ($i = 0; $i -lt 150; $i++) {
-  if (-not (Get-Process -Id $pidVal -ErrorAction SilentlyContinue)) { break }
-  Start-Sleep -Milliseconds 100
-}
-Start-Sleep -Milliseconds 300
-
-try {
-  if (Test-Path -LiteralPath $bakDir) { Remove-Item -LiteralPath $bakDir -Recurse -Force -ErrorAction SilentlyContinue }
-  [void][System.IO.Directory]::CreateDirectory($bakDir)
-
-  $oldExe = Join-Path $appDir 'shipforge.exe'
-  if (Test-Path -LiteralPath $oldExe) {
-    Copy-Item -LiteralPath $oldExe -Destination (Join-Path $bakDir 'shipforge.exe') -Force
-  }
-  $oldWv = Join-Path $appDir 'WebView2Loader.dll'
-  if (Test-Path -LiteralPath $oldWv) {
-    Copy-Item -LiteralPath $oldWv -Destination (Join-Path $bakDir 'WebView2Loader.dll') -Force -ErrorAction SilentlyContinue
-  }
-
-  $newExe = Join-Path $srcDir 'shipforge.exe'
-  $copied = $false
-  for ($try = 1; $try -le 10; $try++) {
-    try {
-      Copy-Item -LiteralPath $newExe -Destination $oldExe -Force
-      $copied = $true
-      break
-    } catch {
-      if ($try -eq 10) { throw }
-      Start-Sleep -Milliseconds (250 * $try)
-    }
-  }
-  if (-not $copied) { throw 'Failed to replace shipforge.exe' }
-
-  foreach ($extra in @('WebView2Loader.dll', 'README.md', 'LICENSE')) {
-    $srcExtra = Join-Path $srcDir $extra
-    if (Test-Path -LiteralPath $srcExtra) {
-      Copy-Item -LiteralPath $srcExtra -Destination (Join-Path $appDir $extra) -Force -ErrorAction SilentlyContinue
-    }
-  }
-  Remove-Item -LiteralPath $bakDir -Recurse -Force -ErrorAction SilentlyContinue
-  Remove-Item -LiteralPath $stgDir -Recurse -Force -ErrorAction SilentlyContinue
-} catch {
-  try {
-    $bakExe = Join-Path $bakDir 'shipforge.exe'
-    if (Test-Path -LiteralPath $bakExe) { Copy-Item -LiteralPath $bakExe -Destination (Join-Path $appDir 'shipforge.exe') -Force }
-    $bakWv = Join-Path $bakDir 'WebView2Loader.dll'
-    if (Test-Path -LiteralPath $bakWv) { Copy-Item -LiteralPath $bakWv -Destination (Join-Path $appDir 'WebView2Loader.dll') -Force -ErrorAction SilentlyContinue }
-  } catch {}
-} finally {
-  $launch = Join-Path $appDir 'shipforge.exe'
-  if (Test-Path -LiteralPath $launch) {
-    Start-Process -FilePath $launch
-  }
-}
-"#;
-    Command::new("powershell")
-        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", script])
-        .env("_SF_UPD_PID", cur_pid)
-        .env("_SF_UPD_APP", app_dir.to_string_lossy().to_string())
-        .env("_SF_UPD_SRC", payload_root.to_string_lossy().to_string())
-        .env("_SF_UPD_BAK", backup_dir.to_string_lossy().to_string())
-        .env("_SF_UPD_STG", stage_root.to_string_lossy().to_string())
-        .creation_flags(CREATE_NO_WINDOW)
-        .spawn()
-        .context("启动便携版原子替换引导器失败")?;
-    Ok(())
-}
+// 旧版隐藏 PowerShell 引导已由独立可视化自动更新宿主 (`updater_host.rs`) 全面取代。
 
 // ---------------------------------------------------------------- Multi-Channel Official Fetch
 
@@ -2407,7 +2281,7 @@ where
         on_stage("正在查询官方预发布订阅源 (1/3)…", 25);
         match fetch_beta_manifest_via_atom(
             OFFICIAL_RELEASES_ATOM_URL,
-            "https://github.com/3347567186/ShipForge/releases/download",
+            "https://github.com/Bireo/ShipForge/releases/download",
         ) {
             Ok(AtomBetaFetch::Primary(m)) => return Ok(m),
             Ok(AtomBetaFetch::FallbackOnly(m)) => {
@@ -2463,7 +2337,7 @@ where
             on_stage("主源响应异常，正在通过标签直链重试 (2/3)…", 55);
             match probe_latest_tag_via_redirect(8_000).and_then(|tag| {
                 let direct_url = format!(
-                    "https://github.com/3347567186/ShipForge/releases/download/{tag}/latest.json"
+                    "https://github.com/Bireo/ShipForge/releases/download/{tag}/latest.json"
                 );
                 fetch_and_parse_manifest(&direct_url)
             }) {
@@ -2765,12 +2639,122 @@ pub fn updater_clear_cache(state: State<'_, UpdaterState>) -> Result<bool, Strin
 }
 
 #[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn updater_auto_update(
+    app: AppHandle,
+    state: State<'_, UpdaterState>,
+    app_state: State<'_, AppState>,
+    url: String,
+    sha256: String,
+    size: u64,
+    version: String,
+    file_name: String,
+    package_kind: String,
+    theme: Option<String>,
+) -> Result<bool, String> {
+    if app_state.runner.has_any_running() {
+        return Err("当前有构建或发布任务正在运行，请等待完成或停止任务后再更新".into());
+    }
+    if state
+        .busy
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        return Err("更新任务正在进行中，请稍候".into());
+    }
+    let _guard = BusyGuard(&state.busy);
+
+    let current_version = env!("CARGO_PKG_VERSION").to_string();
+    let norm_sha = normalize_sha256(&sha256).map_err(|e| format!("{e:#}"))?;
+    let safe_name = sanitize_file_name(&file_name).map_err(|e| format!("{e:#}"))?;
+    let cur_sem = SemVer::parse(&current_version).map_err(|e| format!("{e:#}"))?;
+    let target_sem = SemVer::parse(&version).map_err(|e| format!("{e:#}"))?;
+    if target_sem <= cur_sem {
+        return Err(format!(
+            "安全拦截：拒绝安装低于或等于当前版本的更新（目标 v{version}，当前 v{current_version}）"
+        ));
+    }
+    if !matches!(package_kind.as_str(), "installer" | "portable") {
+        return Err(format!("未知的更新包类型：{package_kind}"));
+    }
+    validate_update_url(&url, true).map_err(|e| format!("{e:#}"))?;
+
+    if package_kind == "portable" {
+        let probe = exe_dir().join(format!(".sf_upd_probe_{}.tmp", std::process::id()));
+        if let Err(e) = fs::write(&probe, b"ok") {
+            return Err(format!(
+                "程序目录无写入权限（{e}），请先以管理员身份重启后再安装便携更新"
+            ));
+        }
+        let _ = fs::remove_file(&probe);
+    }
+
+    let root = updates_dir();
+    let staged_path = state
+        .staged
+        .lock()
+        .ok()
+        .and_then(|g| g.clone())
+        .and_then(|s| {
+            if s.version == version && s.package_kind == package_kind {
+                validate_staged_before_install(&root, &s)
+                    .ok()
+                    .map(|p| p.to_string_lossy().to_string())
+            } else {
+                None
+            }
+        });
+
+    let cur_exe = std::env::current_exe()
+        .map_err(|e| format!("无法获取当前程序路径：{e}"))?;
+    let job = crate::updater_host::UpdateJob {
+        current_version,
+        target_version: version,
+        package_kind,
+        download_url: url,
+        sha256: norm_sha,
+        size,
+        file_name: safe_name,
+        staged_path,
+        app_dir: exe_dir().to_string_lossy().to_string(),
+        app_exe: cur_exe.to_string_lossy().to_string(),
+        main_pid: std::process::id(),
+        theme: match theme.as_deref() {
+            Some("light") => "light".into(),
+            _ => "dark".into(),
+        },
+        preview: false,
+    };
+
+    if app_state.runner.has_any_running() {
+        return Err("当前有构建或发布任务正在运行，请等待完成或停止任务后再更新".into());
+    }
+    if let Ok(mut srv) = app_state.server.lock() {
+        srv.stop();
+    }
+
+    #[cfg(windows)]
+    crate::updater_host::prepare_and_spawn_updater_host(&job).map_err(|e| format!("{e:#}"))?;
+
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(180));
+        handle.exit(0);
+    });
+    Ok(true)
+}
+
+#[tauri::command]
 pub async fn updater_install(
     app: AppHandle,
     state: State<'_, UpdaterState>,
     app_state: State<'_, AppState>,
     silent: Option<bool>,
 ) -> Result<bool, String> {
+    let _ = silent;
     if app_state.runner.has_any_running() {
         return Err("当前有构建或发布任务正在运行，请等待完成或停止任务后再安装更新".into());
     }
@@ -2790,8 +2774,7 @@ pub async fn updater_install(
         .ok_or_else(|| "尚未下载已校验的更新包，请先下载更新".to_string())?;
 
     let staged_clone = staged.clone();
-    let silent_flag = silent.unwrap_or(false);
-    let prepared = tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, String> {
+    let verified_path = tauri::async_runtime::spawn_blocking(move || -> Result<PathBuf, String> {
         let root = updates_dir();
         let file = validate_staged_before_install(&root, &staged_clone)
             .map_err(|e| format!("{e:#}"))?;
@@ -2803,56 +2786,51 @@ pub async fn updater_install(
                 ));
             }
             let _ = fs::remove_file(&probe);
-
-            let stage_dir = root.join(format!("stage_{}", staged_clone.version));
-            if let Ok(sm) = fs::symlink_metadata(&stage_dir) {
-                if sm.file_type().is_symlink() {
-                    return Err("安全拦截：更新暂存目录为异常符号链接".into());
-                }
-                let _ = fs::remove_dir_all(&stage_dir);
-            }
-            if let Err(e) = extract_portable_zip_safe(&file, &stage_dir) {
-                let _ = fs::remove_dir_all(&stage_dir);
-                return Err(format!("解压便携更新包失败：{e:#}"));
-            }
-            let payload = match find_portable_payload_root(&stage_dir) {
-                Ok(p) => p,
-                Err(e) => {
-                    let _ = fs::remove_dir_all(&stage_dir);
-                    return Err(format!("{e:#}"));
-                }
-            };
-            Ok(payload)
-        } else {
-            Ok(file)
         }
+        Ok(file)
     })
     .await
     .map_err(|e| format!("准备安装失败：{e}"))??;
 
-    // 退出前再次复核活动任务，防止解压期间启动的构建/发版事务被中断
     if app_state.runner.has_any_running() {
         return Err("当前有构建或发布任务正在运行，请等待完成或停止任务后再安装更新".into());
     }
-
-    // 停止本机测试更新源，释放端口与文件锁
     if let Ok(mut srv) = app_state.server.lock() {
         srv.stop();
     }
 
-    if staged.package_kind == "portable" {
-        let root = updates_dir();
-        let stage_dir = root.join(format!("stage_{}", staged.version));
-        let backup_dir = root.join(format!("backup_{}", staged.version));
-        spawn_portable_swap_bootstrap(&prepared, &exe_dir(), &backup_dir, &stage_dir)
-            .map_err(|e| format!("{e:#}"))?;
-    } else {
-        spawn_installer_bootstrap(&prepared, silent_flag).map_err(|e| format!("{e:#}"))?;
-    }
+    let cur_exe = std::env::current_exe()
+        .map_err(|e| format!("无法获取当前程序路径：{e}"))?;
+    let file_name = verified_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("ShipForge-update.exe")
+        .to_string();
+    let job = crate::updater_host::UpdateJob {
+        current_version: env!("CARGO_PKG_VERSION").to_string(),
+        target_version: staged.version.clone(),
+        package_kind: staged.package_kind.clone(),
+        download_url: String::new(),
+        sha256: staged.sha256.clone(),
+        size: staged.size,
+        file_name,
+        staged_path: Some(verified_path.to_string_lossy().to_string()),
+        app_dir: exe_dir().to_string_lossy().to_string(),
+        app_exe: cur_exe.to_string_lossy().to_string(),
+        main_pid: std::process::id(),
+        theme: "dark".into(),
+        preview: false,
+    };
 
+    #[cfg(windows)]
+    crate::updater_host::prepare_and_spawn_updater_host(&job).map_err(|e| format!("{e:#}"))?;
+
+    if let Some(w) = app.get_webview_window("main") {
+        let _ = w.hide();
+    }
     let handle = app.clone();
     std::thread::spawn(move || {
-        std::thread::sleep(Duration::from_millis(260));
+        std::thread::sleep(Duration::from_millis(180));
         handle.exit(0);
     });
     Ok(true)
@@ -2914,7 +2892,7 @@ pub async fn updater_changelog(include_remote: Option<bool>) -> Result<Value, St
                             let url = rel
                                 .get("html_url")
                                 .and_then(|u| u.as_str())
-                                .filter(|u| u.starts_with("https://github.com/3347567186/ShipForge/"))
+                                .filter(|u| u.starts_with("https://github.com/Bireo/ShipForge/"))
                                 .map(str::to_string)
                                 .unwrap_or_else(|| format!("{OFFICIAL_RELEASES_PAGE}/tag/{tag}"));
                             let is_pre = rel
@@ -2988,7 +2966,7 @@ mod tests {
         .is_ok());
         // Must block QDisk repo or third-party repos
         assert!(validate_update_url(
-            "https://github.com/3347567186/QDisk/releases/latest/download/latest.json",
+            "https://github.com/Bireo/QDisk/releases/latest/download/latest.json",
             false
         )
         .is_err());
@@ -2998,23 +2976,23 @@ mod tests {
         )
         .is_err());
         assert!(validate_update_url(
-            "https://github.com/3347567186/ShipForge/../QDisk/releases/latest",
+            "https://github.com/Bireo/ShipForge/../QDisk/releases/latest",
             false
         )
         .is_err());
         assert!(validate_update_url(
-            "https://github.com/3347567186/ShipForge/%2e./QDisk/releases/latest",
+            "https://github.com/Bireo/ShipForge/%2e./QDisk/releases/latest",
             false
         )
         .is_err());
         assert!(validate_update_url(
-            "https://github.com/3347567186/ShipForge/releases%2f..%2fQDisk",
+            "https://github.com/Bireo/ShipForge/releases%2f..%2fQDisk",
             false
         )
         .is_err());
         // Must block HTTP remote & HTTPS->loopback redirect downgrade
         assert!(validate_update_url(
-            "http://github.com/3347567186/ShipForge/releases/latest/download/latest.json",
+            "http://github.com/Bireo/ShipForge/releases/latest/download/latest.json",
             false
         )
         .is_err());
@@ -3026,14 +3004,14 @@ mod tests {
     fn test_atom_tag_extraction_blocks_injected_links_and_foreign_repos() {
         let xml = r#"<feed>
             <entry>
-                <link rel="alternate" href="https://github.com/3347567186/ShipForge/releases/tag/v1.4.0"/>
-                <content type="html"><link href="https://github.com/3347567186/ShipForge/releases/tag/v9.9.9"/></content>
+                <link rel="alternate" href="https://github.com/Bireo/ShipForge/releases/tag/v1.4.0"/>
+                <content type="html"><link href="https://github.com/Bireo/ShipForge/releases/tag/v9.9.9"/></content>
             </entry>
             <entry>
-                <link rel="alternate" href="https://github.com/3347567186/QDisk/releases/tag/v9.0.0"/>
+                <link rel="alternate" href="https://github.com/Bireo/QDisk/releases/tag/v9.0.0"/>
             </entry>
             <entry>
-                <link rel="alternate" href="/3347567186/ShipForge/releases/tag/v1.5.0-beta.1"/>
+                <link rel="alternate" href="/Bireo/ShipForge/releases/tag/v1.5.0-beta.1"/>
             </entry>
         </feed>"#;
         let tags = extract_release_tags_from_atom(xml);

@@ -21,6 +21,7 @@ mod storage;
 mod toolchain;
 mod transaction;
 mod updater;
+mod updater_host;
 mod version;
 
 use crate::local_server::LocalFeedServer;
@@ -1462,6 +1463,19 @@ fn add_changelog_entry(
             }
         }
     }
+    let clean_ver = version_str
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    if !clean_ver.is_empty() && !version::is_bare_default_release_note(effective_body) {
+        let clean_notes = version::sanitize_public_release_notes(effective_body);
+        let mut b = storage::load_version_bucket(&project.id, clean_ver);
+        b.notes_draft = clean_notes.clone();
+        b.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+        let _ = storage::save_version_bucket(&project.id, &b);
+        let release_dir = config::resolve_release_dir(&project);
+        sync_latest_json_notes_if_matching(&release_dir, clean_ver, &clean_notes);
+    }
     Ok(version::read_changelog(root, &written_rel))
 }
 
@@ -1498,10 +1512,13 @@ fn upsert_changelog_entry(
         .trim_start_matches('v')
         .trim_start_matches('V');
     if !clean_ver.is_empty() && !version::is_bare_default_release_note(&body) {
+        let clean_notes = version::sanitize_public_release_notes(&body);
         let mut b = storage::load_version_bucket(&project.id, clean_ver);
-        b.notes_draft = version::sanitize_public_release_notes(&body);
+        b.notes_draft = clean_notes.clone();
         b.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let _ = storage::save_version_bucket(&project.id, &b);
+        let release_dir = config::resolve_release_dir(&project);
+        sync_latest_json_notes_if_matching(&release_dir, clean_ver, &clean_notes);
     }
     Ok(written_rel)
 }
@@ -1967,11 +1984,20 @@ async fn extract_release_notes(
 async fn draft_changelog_from_git(
     state: State<'_, AppState>,
     project_id: String,
+    version_str: Option<String>,
 ) -> Result<String, String> {
     let project = find_project(&state, &project_id)?;
     ensure_root_exists(&project)?;
+    let target_ver = version_str
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            version::read_project_versions(Path::new(&project.root), &project.version_files).current
+        });
     tauri::async_runtime::spawn_blocking(move || {
-        git_ops::draft_notes_from_git(Path::new(&project.root))
+        git_ops::draft_notes_from_git_for_project(Path::new(&project.root), &project, &target_ver)
     })
     .await
     .map_err(|e| e.to_string())?
@@ -4823,11 +4849,321 @@ async fn publish_release_multi(
 }
 
 #[tauri::command]
-async fn update_release_multi(req: UpdateReleaseRequest) -> Result<GhReleaseItem, String> {
-    tauri::async_runtime::spawn_blocking(move || repo_client::update_release_multi(&req))
-        .await
-        .map_err(|e| e.to_string())?
-        .map_err(|e| e.to_string())
+async fn update_release_multi(
+    state: State<'_, AppState>,
+    mut req: UpdateReleaseRequest,
+) -> Result<GhReleaseItem, String> {
+    let sanitized_notes = if req.notes.trim().is_empty() {
+        String::new()
+    } else {
+        version::sanitize_public_release_notes(&req.notes)
+    };
+    req.notes = sanitized_notes.clone();
+
+    let project_opt = if !req.project_id.trim().is_empty() {
+        find_project(&state, &req.project_id).ok()
+    } else {
+        None
+    };
+
+    // Acquire project lock when syncing local/remote latest.json so it never races with an active build/publish
+    let _lock_guard = if req.sync_latest_json {
+        if let Some(ref proj) = project_opt {
+            let tid = format!("sync-rel-{}", chrono::Local::now().timestamp_millis());
+            runner::register_task_project(&tid, &proj.id);
+            Some(
+                state
+                    .runner
+                    .acquire_project_guard(&proj.id, &tid)
+                    .map_err(|e| format!("当前项目正在执行构建或发布任务，请稍后再同步：{}", e))?,
+            )
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    let req_for_update = req.clone();
+    let mut updated =
+        tauri::async_runtime::spawn_blocking(move || repo_client::update_release_multi(&req_for_update))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| e.to_string())?;
+
+    let tag_ver = updated
+        .tag_name
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .to_string();
+
+    if let Some(ref proj) = project_opt {
+        if !tag_ver.is_empty() && !sanitized_notes.is_empty() && !version::is_bare_default_release_note(&sanitized_notes) {
+            let mut b = storage::load_version_bucket(&proj.id, &tag_ver);
+            b.notes_draft = sanitized_notes.clone();
+            b.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+            let _ = storage::save_version_bucket(&proj.id, &b);
+        }
+
+        if req.sync_latest_json {
+            let release_dir = config::resolve_release_dir(proj);
+            match packager::read_manifest_version(&release_dir) {
+                Some(local_ver) if local_ver.eq_ignore_ascii_case(&tag_ver) => {
+                    sync_latest_json_notes_if_matching(&release_dir, &tag_ver, &sanitized_notes);
+                    let mut sync_req = req.clone();
+                    if sync_req.release_id.trim().is_empty() && !updated.id.trim().is_empty() {
+                        sync_req.release_id = updated.id.clone();
+                    }
+                    let remote_asset_names: Vec<String> =
+                        updated.assets.iter().map(|a| a.name.clone()).collect();
+                    let rel_dir_up = release_dir.clone();
+                    let uploaded_asset = tauri::async_runtime::spawn_blocking(move || {
+                        repo_client::sync_release_manifest_only(
+                            &rel_dir_up,
+                            &sync_req,
+                            &remote_asset_names,
+                        )
+                    })
+                    .await
+                    .map_err(|e| e.to_string())?
+                    .map_err(|e| format!("线上 Release 正文已更新，但覆盖线上 latest.json 失败：{}", e))?;
+
+                    if let Some(new_asset) = uploaded_asset {
+                        if !updated.assets.is_empty() {
+                            updated
+                                .assets
+                                .retain(|a| !a.name.eq_ignore_ascii_case("latest.json"));
+                        }
+                        updated.assets.push(new_asset);
+                    }
+                    updated.manifest_synced = true;
+                    updated.manifest_sync_message = "已同步更新本地与线上 latest.json（未改动安装包）".into();
+                    let _ = artifacts::mark_artifacts_stage_with_dir(
+                        &proj.id,
+                        Some(&release_dir),
+                        &["latest.json".into()],
+                        "published",
+                        Some(&updated.url),
+                        Some(&req.provider),
+                        false,
+                    );
+                }
+                Some(local_ver) => {
+                    updated.manifest_synced = false;
+                    updated.manifest_sync_message = format!(
+                        "线上 Release 正文已更新；本地 latest.json 版本为 v{}（与目标 {} 不同），未覆盖线上清单",
+                        local_ver, updated.tag_name
+                    );
+                }
+                None => {
+                    updated.manifest_synced = false;
+                    updated.manifest_sync_message =
+                        "线上 Release 正文已更新；本地 release 目录未找到 latest.json，未覆盖线上清单".into();
+                }
+            }
+        }
+    }
+
+    Ok(updated)
+}
+
+#[tauri::command]
+async fn sync_changelog_to_online_release(
+    state: State<'_, AppState>,
+    req: SyncChangelogOnlineRequest,
+) -> Result<SyncChangelogOnlineResult, String> {
+    let project = find_project(&state, &req.project_id)?;
+    ensure_root_exists(&project)?;
+
+    let clean_ver = req
+        .version_str
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .to_string();
+    if clean_ver.is_empty() {
+        return Err("请填写有效的版本号".into());
+    }
+    let clean_notes = version::sanitize_public_release_notes(&req.body);
+    if clean_notes.trim().is_empty() || version::is_bare_default_release_note(&clean_notes) {
+        return Err("当前更新内容为空或仅为默认兜底文案，请先补充实质内容后再同步线上".into());
+    }
+
+    // Resolve project's bound repo (multi-provider repo_binding preferred, fallback to github_repo)
+    let repo_slug = if !project.repo_binding.repo_slug.trim().is_empty() {
+        project.repo_binding.repo_slug.trim().to_string()
+    } else {
+        project.github_repo.trim().to_string()
+    };
+    if repo_slug.is_empty() {
+        return Err("当前项目尚未绑定远程仓库，请先在「产物与仓库」绑定 GitHub / Gitee / GitLab / Gitea 仓库".into());
+    }
+    let provider = if !project.repo_binding.provider.trim().is_empty() {
+        project.repo_binding.provider.trim().to_string()
+    } else {
+        "github".into()
+    };
+    let base_url = project.repo_binding.base_url.trim().to_string();
+    let credential_id = project.repo_binding.credential_id.trim().to_string();
+
+    let tid = format!("sync-cl-{}", chrono::Local::now().timestamp_millis());
+    runner::register_task_project(&tid, &project.id);
+    let _lock_guard = state
+        .runner
+        .acquire_project_guard(&project.id, &tid)
+        .map_err(|e| format!("当前项目正在执行构建或发布任务，请等待完成后再同步：{}", e))?;
+
+    let root = Path::new(&project.root);
+    let mut changelog_written = false;
+    if req.write_changelog {
+        let written_rel = version::upsert_changelog_entry_with_summary(
+            root,
+            &project.changelog_path,
+            &clean_ver,
+            req.summary.trim(),
+            &clean_notes,
+        )
+        .map_err(|e| format!("写入本地变更记录失败：{}", e))?;
+        changelog_written = true;
+        if project.changelog_path.trim().is_empty() {
+            if let Ok(mut cfg) = state.config.lock() {
+                if let Some(p) = cfg.projects.iter_mut().find(|p| p.id == project.id) {
+                    p.changelog_path = written_rel;
+                    let _ = config::save_config(&cfg);
+                }
+            }
+        }
+    }
+
+    // Persist draft bucket & update local latest.json if matching version
+    let mut bucket = storage::load_version_bucket(&project.id, &clean_ver);
+    bucket.notes_draft = clean_notes.clone();
+    bucket.updated_at = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
+    let _ = storage::save_version_bucket(&project.id, &bucket);
+
+    let release_dir = config::resolve_release_dir(&project);
+    sync_latest_json_notes_if_matching(&release_dir, &clean_ver, &clean_notes);
+
+    // Fetch existing online releases to find the matching tag and preserve its title/draft/prerelease flags
+    let prov_l = provider.clone();
+    let base_l = base_url.clone();
+    let cred_l = credential_id.clone();
+    let repo_l = repo_slug.clone();
+    let releases = tauri::async_runtime::spawn_blocking(move || {
+        repo_client::list_releases_multi(&prov_l, &base_l, &cred_l, &repo_l)
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| format!("读取线上发行版列表失败：{}", e))?;
+
+    let target_tag_v = format!("v{}", clean_ver);
+    let matched = releases
+        .into_iter()
+        .find(|r| {
+            let t = r.tag_name.trim();
+            t.eq_ignore_ascii_case(&target_tag_v) || t.eq_ignore_ascii_case(&clean_ver)
+        })
+        .ok_or_else(|| {
+            if changelog_written {
+                format!(
+                    "已写入本地变更记录并更新本地 latest.json，但线上仓库尚未发布 {}；请前往「产物与仓库」完成首次发版",
+                    target_tag_v
+                )
+            } else {
+                format!(
+                    "线上仓库尚未找到 {} 的发行版，请先在「产物与仓库」发布该版本",
+                    target_tag_v
+                )
+            }
+        })?;
+
+    let update_req = UpdateReleaseRequest {
+        project_id: project.id.clone(),
+        provider: provider.clone(),
+        base_url: base_url.clone(),
+        credential_id: credential_id.clone(),
+        repo: repo_slug.clone(),
+        release_id: matched.id.clone(),
+        tag_name: matched.tag_name.clone(),
+        title: if matched.name.trim().is_empty() {
+            matched.tag_name.clone()
+        } else {
+            matched.name.clone()
+        },
+        notes: clean_notes.clone(),
+        prerelease: matched.is_prerelease,
+        draft: matched.is_draft,
+        sync_latest_json: req.sync_latest_json,
+    };
+
+    let req_patch = update_req.clone();
+    let updated =
+        tauri::async_runtime::spawn_blocking(move || repo_client::update_release_multi(&req_patch))
+            .await
+            .map_err(|e| e.to_string())?
+            .map_err(|e| format!("更新线上 Release 正文失败：{}", e))?;
+
+    let mut manifest_synced = false;
+    let mut detail_msg = format!("已同步更新线上 Release {} 正文说明", updated.tag_name);
+
+    if req.sync_latest_json {
+        match packager::read_manifest_version(&release_dir) {
+            Some(local_ver) if local_ver.eq_ignore_ascii_case(&clean_ver) => {
+                let mut remote_assets: Vec<String> =
+                    updated.assets.iter().map(|a| a.name.clone()).collect();
+                if remote_assets.is_empty() {
+                    remote_assets = matched.assets.iter().map(|a| a.name.clone()).collect();
+                }
+                let mut sync_req = update_req.clone();
+                if sync_req.release_id.trim().is_empty() && !updated.id.trim().is_empty() {
+                    sync_req.release_id = updated.id.clone();
+                }
+                let rel_dir_up = release_dir.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    repo_client::sync_release_manifest_only(&rel_dir_up, &sync_req, &remote_assets)
+                })
+                .await
+                .map_err(|e| e.to_string())?
+                .map_err(|e| format!("线上 Release 正文已更新，但覆盖线上 latest.json 失败：{}", e))?;
+
+                manifest_synced = true;
+                detail_msg = format!(
+                    "已同步更新线上 Release {} 说明并覆盖 latest.json（未改动安装包）",
+                    updated.tag_name
+                );
+                let _ = artifacts::mark_artifacts_stage_with_dir(
+                    &project.id,
+                    Some(&release_dir),
+                    &["latest.json".into()],
+                    "published",
+                    Some(&updated.url),
+                    Some(&provider),
+                    false,
+                );
+            }
+            Some(local_ver) => {
+                detail_msg = format!(
+                    "已更新线上 Release {} 正文；本地 latest.json 为 v{}（与目标 {} 不同），未覆盖线上清单",
+                    updated.tag_name, local_ver, updated.tag_name
+                );
+            }
+            None => {
+                detail_msg = format!(
+                    "已更新线上 Release {} 正文；本地 release 目录未找到 latest.json，未覆盖线上清单",
+                    updated.tag_name
+                );
+            }
+        }
+    }
+
+    Ok(SyncChangelogOnlineResult {
+        tag_name: updated.tag_name,
+        url: updated.url,
+        changelog_written,
+        manifest_synced,
+        message: detail_msg,
+    })
 }
 
 #[tauri::command]
@@ -4896,6 +5232,17 @@ fn get_app_info() -> serde_json::Value {
 }
 
 fn main() {
+    if let Some(cli) = updater_host::parse_updater_host_cli() {
+        updater_host::run_updater_host_app(cli);
+        return;
+    }
+
+    // 异步清理上次自动更新遗留的独立更新弹窗宿主目录
+    std::thread::spawn(|| {
+        std::thread::sleep(std::time::Duration::from_millis(2500));
+        updater_host::cleanup_updater_host_artifacts();
+    });
+
     let initial_cfg = config::load_config();
     // Backfill workspace owner metadata for existing projects so their isolated workspaces are bound to their roots
     for p in &initial_cfg.projects {
@@ -5015,6 +5362,7 @@ fn main() {
             list_releases_multi,
             publish_release_multi,
             update_release_multi,
+            sync_changelog_to_online_release,
             delete_release_multi,
             delete_release_asset_multi,
             get_app_info,
@@ -5025,6 +5373,7 @@ fn main() {
             updater::updater_download,
             updater::updater_cancel,
             updater::updater_clear_cache,
+            updater::updater_auto_update,
             updater::updater_install,
             updater::updater_changelog,
         ])

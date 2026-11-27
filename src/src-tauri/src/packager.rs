@@ -980,6 +980,174 @@ pub fn generate_manifest(release_dir: &Path, req: &ManifestRequest) -> Result<Ma
     })
 }
 
+/// Reads the normalized version string (without leading `v`) from `release_dir/latest.json`, if present and valid.
+pub fn read_manifest_version(release_dir: &Path) -> Option<String> {
+    let latest_path = release_dir.join("latest.json");
+    if !latest_path.is_file() {
+        return None;
+    }
+    let raw = fs::read_to_string(&latest_path).ok()?;
+    let val: serde_json::Value = serde_json::from_str(raw.trim_start_matches('\u{feff}')).ok()?;
+    let ver = val
+        .get("version")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .trim_start_matches('V')
+        .to_string();
+    if ver.is_empty() {
+        None
+    } else {
+        Some(ver)
+    }
+}
+
+/// Validates `release_dir/latest.json` for a metadata-only sync onto an ALREADY-PUBLISHED Release
+/// (without re-uploading binaries). Enforces version alignment, public http(s) URLs, 64-char SHA-256,
+/// and verifies every referenced binary already exists on the remote Release (or locally with matching size).
+pub fn validate_manifest_for_notes_sync(
+    release_dir: &Path,
+    expected_tag: &str,
+    remote_asset_names: &[String],
+) -> Result<()> {
+    let latest_path = release_dir.join("latest.json");
+    let raw = fs::read_to_string(&latest_path).context("无法读取本地 latest.json 进行同步前校验")?;
+    let val: serde_json::Value =
+        serde_json::from_str(raw.trim_start_matches('\u{feff}')).context("本地 latest.json 格式损坏")?;
+
+    let expected_ver = expected_tag
+        .trim()
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    let mver = val
+        .get("version")
+        .and_then(|x| x.as_str())
+        .map(str::trim)
+        .unwrap_or("")
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    if mver.is_empty() {
+        return Err(anyhow!(
+            "安全拦截：本地 latest.json 缺少有效的 version 字段，无法同步"
+        ));
+    }
+    if !expected_ver.is_empty() && !mver.eq_ignore_ascii_case(expected_ver) {
+        return Err(anyhow!(
+            "安全拦截：本地 latest.json 版本为 v{}，与目标 Release {} 不一致，已阻止覆盖",
+            mver,
+            expected_tag
+        ));
+    }
+
+    let check_entry = |label: &str, obj: &serde_json::Map<String, serde_json::Value>| -> Result<()> {
+        let url = obj.get("url").and_then(|x| x.as_str()).unwrap_or("").trim();
+        let url_low = url.to_ascii_lowercase();
+        if url_low.is_empty() {
+            return Err(anyhow!(
+                "安全拦截：latest.json 中的 {} 缺少下载地址 (url)，无法同步",
+                label
+            ));
+        }
+        if url_low.contains("127.0.0.1")
+            || url_low.contains("localhost")
+            || url_low.contains("::1")
+            || url_low.contains("0.0.0.0")
+            || url_low.starts_with("file:")
+            || (!url_low.starts_with("https://") && !url_low.starts_with("http://"))
+        {
+            return Err(anyhow!(
+                "安全拦截：latest.json 中的 {} 下载地址必须为公网 http(s):// 地址（{}）",
+                label,
+                url
+            ));
+        }
+        let valid_sha = obj
+            .get("sha256")
+            .and_then(|x| x.as_str())
+            .map(|s| s.trim())
+            .map(|s| s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()))
+            .unwrap_or(false);
+        if !valid_sha {
+            return Err(anyhow!(
+                "安全拦截：latest.json 中的 {} 缺少合法的 64 位 SHA-256 摘要，无法同步",
+                label
+            ));
+        }
+        if let Some(fname) = obj.get("file").and_then(|x| x.as_str()) {
+            crate::guardrails::validate_single_filename(fname)
+                .map_err(|e| anyhow!("安全拦截：latest.json 引用了非法文件名 {}（{}）", fname, e))?;
+            if let Some(fver) = extract_artifact_version(fname) {
+                if !mver.is_empty() && !fver.eq_ignore_ascii_case(mver) {
+                    return Err(anyhow!(
+                        "安全拦截：latest.json 声明版本为 v{}，但 {} 指向 v{} 产物，已阻止覆盖",
+                        mver,
+                        fname,
+                        fver
+                    ));
+                }
+            }
+            if !remote_asset_names.is_empty() {
+                let exists_remote = remote_asset_names
+                    .iter()
+                    .any(|n| n.eq_ignore_ascii_case(fname));
+                if !exists_remote {
+                    return Err(anyhow!(
+                        "安全拦截：latest.json 引用的产物 {} 尚未存在于线上 Release {} 的资产中，请先上传安装包后再同步清单",
+                        fname,
+                        expected_tag
+                    ));
+                }
+            } else if let Ok(confined) = crate::guardrails::resolve_confined_path(release_dir, fname) {
+                if confined.is_file() {
+                    if let Some(es) = obj.get("size").and_then(|x| x.as_u64()) {
+                        let actual_size = fs::metadata(&confined)?.len();
+                        if es != actual_size {
+                            return Err(anyhow!(
+                                "安全拦截：{} 的本地体积（{} B）与 latest.json 记录（{} B）不一致，请重新生成清单",
+                                fname,
+                                actual_size,
+                                es
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+        Ok(())
+    };
+
+    let mut entry_count = 0usize;
+    for key in ["installer", "portable"] {
+        if let Some(obj) = val.get(key).and_then(|x| x.as_object()) {
+            entry_count += 1;
+            check_entry(key, obj)?;
+        }
+    }
+    if let Some(plats) = val.get("platforms").and_then(|x| x.as_object()) {
+        for (plat_key, pv) in plats {
+            if let Some(obj) = pv.as_object() {
+                entry_count += 1;
+                check_entry(&format!("platforms.{}", plat_key), obj)?;
+            }
+        }
+    }
+    if let Some(extras) = val.get("extras").and_then(|x| x.as_array()) {
+        for (idx, ev) in extras.iter().enumerate() {
+            if let Some(obj) = ev.as_object() {
+                entry_count += 1;
+                check_entry(&format!("extras[{}]", idx), obj)?;
+            }
+        }
+    }
+    if entry_count == 0 {
+        return Err(anyhow!(
+            "安全拦截：latest.json 缺少任何有效的产物条目，禁止同步空清单"
+        ));
+    }
+    Ok(())
+}
+
 /// Red-team pre-publish safety gate: prevents publishing a broken, size-mismatched, or localhost-polluted latest.json / SHA256SUMS.txt!
 pub fn validate_manifest_for_publish(
     release_dir: &Path,

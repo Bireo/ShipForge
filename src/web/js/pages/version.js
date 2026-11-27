@@ -176,9 +176,10 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
             <h2 style="margin:0;font-size:16px">撰写变更记录</h2>
             <span class="tag mono tag-accent">v${esc(draftVer)} 隔离草稿</span>
           </div>
-          <div class="field-row" style="gap:6px">
+          <div class="field-row" style="gap:6px;flex-wrap:wrap">
             <button class="btn btn-xs" id="clSaveDraftBtn" type="button" title="仅保存到当前版本隔离草稿，不修改源码文件">暂存草稿</button>
             <button class="btn btn-xs" id="clDraftGitBtn" type="button" ${rootExists ? "" : "disabled"}>从 Git 提交草拟</button>
+            <button class="btn btn-xs btn-soft" id="clSyncOnlineBtn" type="button" ${rootExists ? "" : "disabled"} title="写入变更记录并同步更新线上同版本 Release 说明与 latest.json（不重传安装包）">同步线上日志</button>
             <button class="btn btn-xs btn-primary" id="clSaveBtn" type="button" ${rootExists ? "" : "disabled"}>写入变更记录</button>
           </div>
         </div>
@@ -244,7 +245,8 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
       document.getElementById("clDraftGitBtn")?.addEventListener("click", (e) =>
         withBusy(e.currentTarget, "读取 Git…", async () => {
           try {
-            draftBody = await API.draftChangelogFromGit(project.id);
+            const targetVer = verInp?.value?.trim() || draftVer || versions.current;
+            draftBody = await API.draftChangelogFromGit(project.id, targetVer);
             bodyInp.value = draftBody;
             toast("已从 Git 提交生成变更草稿", "ok");
           } catch (err) {
@@ -265,7 +267,7 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
           try {
             const data = await API.addChangelogEntry(project.id, ver, summary, body);
             await API.saveVersionDraft(project.id, ver, body).catch(() => {});
-            toast(`已同步写入 v${ver} 到变更记录`, "ok");
+            toast(`已写入 v${ver} 变更记录（同版本本地 latest.json 已自动同步）`, "ok", 3400);
             entries = normalizeEntriesNewestFirst(data?.entries || []);
             draftSummary = "";
             bodyUserEdited = false;
@@ -277,6 +279,56 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
             renderRightPane();
           } catch (err) {
             toast(`写入失败：${err}`, "err");
+          }
+        })
+      );
+
+      document.getElementById("clSyncOnlineBtn")?.addEventListener("click", (e) =>
+        withBusy(e.currentTarget, "同步线上…", async () => {
+          const ver = verInp.value.trim();
+          const summary = sumInp.value.trim();
+          const body = bodyInp.value.trim();
+          if (!isValidSemver(ver)) {
+            toast("请填写有效的语义版本号", "warn");
+            return;
+          }
+          if (!body) {
+            toast("请先填写变更内容再同步线上", "warn");
+            return;
+          }
+          try {
+            const res = await API.syncChangelogToOnlineRelease({
+              projectId: project.id,
+              versionStr: ver,
+              summary,
+              body,
+              writeChangelog: true,
+              syncLatestJson: true,
+            });
+            toast(res?.message || `已同步线上 v${ver} 日志与 latest.json`, res?.manifestSynced ? "ok" : "warn", 4600);
+            const data = await API.getChangelog(project.id).catch(() => null);
+            if (data?.entries) {
+              entries = normalizeEntriesNewestFirst(data.entries);
+              draftSummary = "";
+              bodyUserEdited = false;
+              const hitIdx = entries.findIndex(
+                (item) => (item.version || "").toLowerCase() === ver.toLowerCase()
+              );
+              selectedMode = hitIdx >= 0 ? hitIdx : 0;
+              renderSidebarList();
+              renderRightPane();
+            }
+          } catch (err) {
+            toast(`${err}`, "err", 5600);
+            // If changelog was written locally before remote check failed, refresh sidebar anyway
+            API.getChangelog(project.id)
+              .then((data) => {
+                if (data?.entries) {
+                  entries = normalizeEntriesNewestFirst(data.entries);
+                  renderSidebarList();
+                }
+              })
+              .catch(() => {});
           }
         })
       );
@@ -297,8 +349,9 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
             </div>
             <h2 class="notes-doc-title">${esc(cleanHeading)}</h2>
           </div>
-          <div class="field-row" style="gap:6px">
+          <div class="field-row" style="gap:6px;flex-wrap:wrap">
             <button class="btn btn-xs" id="clCopyReadBtn" type="button">复制内容</button>
+            <button class="btn btn-xs btn-soft" id="clReadSyncOnlineBtn" type="button" ${rootExists ? "" : "disabled"} title="将该版本变更内容同步到线上 Release 正文，并覆盖同版本 latest.json（不重传安装包）">同步线上日志</button>
             <button class="btn btn-xs btn-soft" id="clCloneToEditBtn" type="button">载入到编辑器</button>
             <button class="btn btn-xs btn-primary" id="clBackComposeBtn" type="button">撰写新条目</button>
           </div>
@@ -316,6 +369,32 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
           : `${headingText}\n\n${bodyText}`.trim();
         copyText(fullText, `已复制 v${item.version} 变更说明`);
       });
+      document.getElementById("clReadSyncOnlineBtn")?.addEventListener("click", (e) =>
+        withBusy(e.currentTarget, "同步线上…", async () => {
+          const bodyText = (item.body || "").trim();
+          if (!bodyText) {
+            toast("该版本暂无正文描述，无法同步", "warn");
+            return;
+          }
+          try {
+            const res = await API.syncChangelogToOnlineRelease({
+              projectId: project.id,
+              versionStr: item.version,
+              summary: "",
+              body: bodyText,
+              writeChangelog: false,
+              syncLatestJson: true,
+            });
+            toast(
+              res?.message || `已同步线上 v${item.version} 日志`,
+              res?.manifestSynced ? "ok" : "warn",
+              4600
+            );
+          } catch (err) {
+            toast(`${err}`, "err", 5600);
+          }
+        })
+      );
       document.getElementById("clCloneToEditBtn")?.addEventListener("click", () => {
         draftVer = item.version || versions.current;
         draftBody = item.body || "";

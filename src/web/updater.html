@@ -1,0 +1,921 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light dark" />
+  <title>ShipForge 自动更新</title>
+  <style>
+    @font-face {
+      font-family: "Inter";
+      font-style: normal;
+      font-weight: 100 900;
+      font-display: swap;
+      src: url("assets/fonts/Inter-latin.woff2") format("woff2");
+      unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC,
+        U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215,
+        U+FEFF, U+FFFD;
+    }
+
+    @property --ring-pct {
+      syntax: "<number>";
+      inherits: true;
+      initial-value: 0;
+    }
+
+    :root {
+      color-scheme: light dark;
+      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
+      --mono: "SF Mono", "Cascadia Mono", Consolas, monospace;
+
+      /* Light tokens (Apple Sequoia × ShipForge Cobalt/Amber) */
+      --bg: #ffffff;
+      --bg-subtle: #f5f5f7;
+      --border: rgba(0, 0, 0, 0.09);
+      --text-1: #1d1d1f;
+      --text-2: #636366;
+      --text-3: #8e8e93;
+      --track: rgba(0, 0, 0, 0.075);
+      --ring-track: rgba(15, 23, 42, 0.09);
+      --accent-a: #2563eb;
+      --accent-b: #f59e0b;
+      --accent-solid: #d98a00;
+      --accent-solid-hover: #c07900;
+      --accent-fg: #ffffff;
+      --pill-bg: rgba(37, 99, 235, 0.09);
+      --pill-fg: #1d4ed8;
+      --ok: #248a3d;
+      --err: #d70015;
+      --err-bg: rgba(215, 0, 21, 0.08);
+      --btn-ghost-bg: rgba(0, 0, 0, 0.048);
+      --btn-ghost-hover: rgba(0, 0, 0, 0.09);
+      --halo-glow: rgba(59, 130, 246, 0.16);
+      --step-done: #248a3d;
+      --step-active: #d98a00;
+    }
+
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #1c1c1e;
+        --bg-subtle: #252528;
+        --border: rgba(255, 255, 255, 0.11);
+        --text-1: #f5f5f7;
+        --text-2: #aeaeb2;
+        --text-3: #8e8e93;
+        --track: rgba(255, 255, 255, 0.10);
+        --ring-track: rgba(148, 163, 184, 0.18);
+        --accent-a: #3b82f6;
+        --accent-b: #fbbf24;
+        --accent-solid: #f5b731;
+        --accent-solid-hover: #ffca52;
+        --accent-fg: #1c1c1e;
+        --pill-bg: rgba(59, 130, 246, 0.18);
+        --pill-fg: #93c5fd;
+        --ok: #30d158;
+        --err: #ff453a;
+        --err-bg: rgba(255, 69, 58, 0.14);
+        --btn-ghost-bg: rgba(255, 255, 255, 0.08);
+        --btn-ghost-hover: rgba(255, 255, 255, 0.14);
+        --halo-glow: rgba(59, 130, 246, 0.28);
+        --step-done: #30d158;
+        --step-active: #fbbf24;
+      }
+    }
+
+    html[data-theme="light"] {
+      color-scheme: light;
+      --bg: #ffffff;
+      --bg-subtle: #f5f5f7;
+      --border: rgba(0, 0, 0, 0.09);
+      --text-1: #1d1d1f;
+      --text-2: #636366;
+      --text-3: #8e8e93;
+      --track: rgba(0, 0, 0, 0.075);
+      --ring-track: rgba(15, 23, 42, 0.09);
+      --accent-a: #2563eb;
+      --accent-b: #f59e0b;
+      --accent-solid: #d98a00;
+      --accent-solid-hover: #c07900;
+      --accent-fg: #ffffff;
+      --pill-bg: rgba(37, 99, 235, 0.09);
+      --pill-fg: #1d4ed8;
+      --ok: #248a3d;
+      --err: #d70015;
+      --err-bg: rgba(215, 0, 21, 0.08);
+      --btn-ghost-bg: rgba(0, 0, 0, 0.048);
+      --btn-ghost-hover: rgba(0, 0, 0, 0.09);
+      --halo-glow: rgba(59, 130, 246, 0.16);
+      --step-done: #248a3d;
+      --step-active: #d98a00;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #1c1c1e;
+      --bg-subtle: #252528;
+      --border: rgba(255, 255, 255, 0.11);
+      --text-1: #f5f5f7;
+      --text-2: #aeaeb2;
+      --text-3: #8e8e93;
+      --track: rgba(255, 255, 255, 0.10);
+      --ring-track: rgba(148, 163, 184, 0.18);
+      --accent-a: #3b82f6;
+      --accent-b: #fbbf24;
+      --accent-solid: #f5b731;
+      --accent-solid-hover: #ffca52;
+      --accent-fg: #1c1c1e;
+      --pill-bg: rgba(59, 130, 246, 0.18);
+      --pill-fg: #93c5fd;
+      --ok: #30d158;
+      --err: #ff453a;
+      --err-bg: rgba(255, 69, 58, 0.14);
+      --btn-ghost-bg: rgba(255, 255, 255, 0.08);
+      --btn-ghost-hover: rgba(255, 255, 255, 0.14);
+      --halo-glow: rgba(59, 130, 246, 0.28);
+      --step-done: #30d158;
+      --step-active: #fbbf24;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    html, body {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: var(--bg);
+      color: var(--text-1);
+      font-family: var(--font);
+      font-size: 13px;
+      line-height: 1.45;
+      user-select: none;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .shell {
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      width: 100%;
+      height: 100%;
+      padding: 15px 22px 18px;
+      border: 1px solid var(--border);
+      background:
+        radial-gradient(240px 140px at 50% 0%, var(--halo-glow), transparent 72%),
+        var(--bg);
+    }
+
+    /* Top drag strip */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 22px;
+      margin-bottom: 6px;
+    }
+
+    .brand-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+      color: var(--text-2);
+    }
+
+    .brand-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--accent-b);
+      box-shadow: 0 0 8px var(--accent-b);
+    }
+
+    .ver-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 7px;
+      border-radius: 999px;
+      background: var(--pill-bg);
+      color: var(--pill-fg);
+      font-family: var(--mono);
+      font-size: 10.5px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+
+    .icon-btn {
+      width: 22px;
+      height: 22px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text-3);
+      display: grid;
+      place-items: center;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+
+    .icon-btn:hover {
+      background: var(--btn-ghost-hover);
+      color: var(--text-1);
+    }
+
+    .icon-btn:disabled {
+      opacity: 0.32;
+      pointer-events: none;
+    }
+
+    /* Hero Logo + Progress Ring */
+    .hero {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      text-align: center;
+      margin-top: 2px;
+    }
+
+    .logo-stage {
+      position: relative;
+      width: 88px;
+      height: 88px;
+      display: grid;
+      place-items: center;
+      margin-bottom: 10px;
+    }
+
+    /* Semantic <progress> styled as circular progress halo */
+    progress.logo-progress-ring {
+      --size: 88px;
+      --thickness: 3.5px;
+      --ring-fill: var(--accent-b);
+      width: var(--size);
+      height: var(--size);
+      border-radius: 50%;
+      appearance: none;
+      border: var(--thickness) solid transparent;
+      background: conic-gradient(
+        from 0deg,
+        var(--accent-a) 0%,
+        var(--ring-fill) calc(var(--ring-pct) * 1%),
+        var(--ring-track) calc(var(--ring-pct) * 1%)
+      );
+      background-origin: border-box;
+      background-clip: border-area;
+      transition: --ring-pct 0s linear;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      progress.logo-progress-ring {
+        transition: --ring-pct 0.35s cubic-bezier(0.22, 1, 0.36, 1);
+      }
+    }
+
+    @supports not (background-clip: border-area) {
+      progress.logo-progress-ring {
+        border: 0;
+        mask-image: radial-gradient(
+          transparent calc(50% - var(--thickness)),
+          #000 calc(50% - var(--thickness) + 0.6px)
+        );
+      }
+    }
+
+    progress.logo-progress-ring::-webkit-progress-bar,
+    progress.logo-progress-ring::-webkit-progress-value {
+      display: none;
+      background: none;
+    }
+
+    progress.logo-progress-ring::-moz-progress-bar {
+      display: none;
+      background: none;
+    }
+
+    progress.logo-progress-ring[value="100"] {
+      --accent-a: var(--ok);
+      --ring-fill: var(--ok);
+    }
+
+    .shell[data-phase="error"] progress.logo-progress-ring {
+      --accent-a: var(--err);
+      --ring-fill: var(--err);
+    }
+
+    @media (forced-colors: active) {
+      progress.logo-progress-ring {
+        forced-color-adjust: none;
+        --accent-a: Highlight;
+        --ring-fill: Highlight;
+        --ring-track: Canvas;
+      }
+    }
+
+    .logo-wrap {
+      position: absolute;
+      width: 68px;
+      height: 68px;
+      display: grid;
+      place-items: center;
+      filter: drop-shadow(0 6px 14px rgba(2, 6, 23, 0.34));
+    }
+
+    .sf-logo {
+      width: 68px;
+      height: 68px;
+      display: block;
+    }
+
+    /* ShipForge Logo bespoke kinetic animations */
+    .sf-blueprint-ring {
+      transform-origin: 256px 256px;
+    }
+
+    .sf-launch-core {
+      transform-origin: 256px 212px;
+    }
+
+    .sf-lid {
+      transform-origin: 256px 154px;
+    }
+
+    @media (prefers-reduced-motion: no-preference) {
+      .shell[data-busy="true"] .sf-blueprint-ring {
+        animation: sf-orbit 12s linear infinite;
+      }
+
+      .shell[data-busy="true"] .sf-launch-core {
+        animation: sf-spark-float 1.8s ease-in-out infinite;
+      }
+
+      .shell[data-phase="installing"] .sf-lid {
+        animation: sf-lid-forge 1.5s ease-in-out infinite;
+      }
+
+      .shell[data-phase="done"] .logo-wrap {
+        animation: sf-pop-done 0.45s cubic-bezier(0.22, 1.4, 0.36, 1) 1;
+      }
+    }
+
+    @keyframes sf-orbit {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
+    @keyframes sf-spark-float {
+      0%, 100% { transform: translateY(0px) scale(1); opacity: 0.94; }
+      50% { transform: translateY(-9px) scale(1.04); opacity: 1; }
+    }
+
+    @keyframes sf-lid-forge {
+      0%, 100% { transform: translateY(0px); }
+      50% { transform: translateY(-6px); }
+    }
+
+    @keyframes sf-pop-done {
+      0% { transform: scale(0.92); }
+      60% { transform: scale(1.06); }
+      100% { transform: scale(1); }
+    }
+
+    .state-badge {
+      position: absolute;
+      right: 4px;
+      bottom: 4px;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+      opacity: 0;
+      transform: scale(0.5);
+      transition: opacity 0.22s ease, transform 0.26s cubic-bezier(0.22, 1.4, 0.36, 1);
+    }
+
+    .shell[data-phase="done"] .state-badge {
+      opacity: 1;
+      transform: scale(1);
+      background: var(--ok);
+    }
+
+    .shell[data-phase="error"] .state-badge {
+      opacity: 1;
+      transform: scale(1);
+      background: var(--err);
+    }
+
+    .title {
+      font-size: 15px;
+      font-weight: 650;
+      letter-spacing: -0.01em;
+      color: var(--text-1);
+    }
+
+    .detail {
+      margin-top: 3px;
+      min-height: 18px;
+      max-width: 100%;
+      font-size: 12px;
+      color: var(--text-2);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .shell[data-phase="error"] .detail {
+      color: var(--err);
+      white-space: normal;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      line-height: 1.38;
+      min-height: 32px;
+    }
+
+    /* Progress bar row */
+    .bar-section {
+      margin-top: 12px;
+    }
+
+    .bar-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    progress.linear-bar {
+      flex: 1;
+      height: 6px;
+      appearance: none;
+      border: 0 solid;
+      border-radius: 999px;
+      overflow: clip;
+      background: var(--track);
+    }
+
+    progress.linear-bar::-webkit-progress-bar {
+      background: transparent;
+    }
+
+    progress.linear-bar::-webkit-progress-value {
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
+      transition: inline-size 0.25s ease;
+    }
+
+    progress.linear-bar::-moz-progress-bar {
+      border-radius: 999px;
+      background: linear-gradient(90deg, var(--accent-a), var(--accent-b));
+    }
+
+    progress.linear-bar[value="100"]::-webkit-progress-value {
+      background: var(--ok);
+    }
+
+    progress.linear-bar[value="100"]::-moz-progress-bar {
+      background: var(--ok);
+    }
+
+    .pct {
+      min-width: 36px;
+      text-align: right;
+      font-family: var(--mono);
+      font-size: 11.5px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      color: var(--text-2);
+    }
+
+    .meta-row {
+      margin-top: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 11px;
+      color: var(--text-3);
+      font-variant-numeric: tabular-nums;
+      min-height: 16px;
+    }
+
+    /* 4-step milestone rail */
+    .steps {
+      margin-top: 10px;
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+
+    .step {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 5px;
+      padding: 4px 6px;
+      border-radius: 7px;
+      background: var(--bg-subtle);
+      font-size: 11px;
+      color: var(--text-3);
+      transition: color 0.2s, background 0.2s;
+    }
+
+    .step-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: currentColor;
+      opacity: 0.45;
+      flex-shrink: 0;
+    }
+
+    .step.is-active {
+      color: var(--text-1);
+      font-weight: 600;
+    }
+
+    .step.is-active .step-dot {
+      background: var(--step-active);
+      opacity: 1;
+      box-shadow: 0 0 6px var(--step-active);
+    }
+
+    .step.is-done {
+      color: var(--step-done);
+    }
+
+    .step.is-done .step-dot {
+      background: var(--step-done);
+      opacity: 1;
+    }
+
+    /* Footer actions */
+    .footer {
+      margin-top: auto;
+      padding-top: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .hint {
+      font-size: 11px;
+      color: var(--text-3);
+    }
+
+    .actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-left: auto;
+    }
+
+    .btn {
+      height: 26px;
+      padding: 0 11px;
+      border: 0;
+      border-radius: 7px;
+      font-family: var(--font);
+      font-size: 11.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background 0.15s, opacity 0.15s;
+    }
+
+    .btn-ghost {
+      background: var(--btn-ghost-bg);
+      color: var(--text-1);
+    }
+
+    .btn-ghost:hover {
+      background: var(--btn-ghost-hover);
+    }
+
+    .btn-accent {
+      background: var(--accent-solid);
+      color: var(--accent-fg);
+    }
+
+    .btn-accent:hover {
+      background: var(--accent-solid-hover);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+  </style>
+</head>
+<body>
+  <main class="shell" id="shell" data-phase="waiting_exit" data-busy="true">
+    <header class="topbar" data-tauri-drag-region>
+      <div class="brand-pill" data-tauri-drag-region>
+        <span class="brand-dot" aria-hidden="true"></span>
+        <span>ShipForge 自动更新</span>
+        <span class="ver-badge" id="verBadge">v— → v—</span>
+      </div>
+      <div class="top-actions">
+        <button class="icon-btn" id="btnClose" type="button" title="取消并关闭" aria-label="取消并关闭">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+            <path d="M2.5 2.5l7 7M9.5 2.5l-7 7"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <section class="hero" data-tauri-drag-region>
+      <div class="logo-stage" data-tauri-drag-region>
+        <progress class="logo-progress-ring" id="ringProgress" value="4" max="100" aria-label="ShipForge 更新进度"></progress>
+        <div class="logo-wrap" aria-hidden="true">
+          <!-- ShipForge Official Isometric Forged Cube Logo with Live Kinetic Elements -->
+          <svg class="sf-logo" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <defs>
+              <linearGradient id="sf-bg" x1="12%" y1="6%" x2="88%" y2="94%">
+                <stop offset="0%" stop-color="#1E293B"/>
+                <stop offset="52%" stop-color="#111827"/>
+                <stop offset="100%" stop-color="#090D16"/>
+              </linearGradient>
+              <linearGradient id="sf-rim" x1="0%" y1="0%" x2="0%" y2="100%">
+                <stop offset="0%" stop-color="#93C5FD" stop-opacity="0.34"/>
+                <stop offset="50%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+                <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.02"/>
+              </linearGradient>
+              <radialGradient id="sf-glow" cx="50%" cy="28%" r="60%">
+                <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.32"/>
+                <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+              </radialGradient>
+              <linearGradient id="sf-top" x1="15%" y1="10%" x2="85%" y2="90%">
+                <stop offset="0%" stop-color="#F8FAFC"/>
+                <stop offset="100%" stop-color="#CBD5E1"/>
+              </linearGradient>
+              <linearGradient id="sf-left" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#3B82F6"/>
+                <stop offset="100%" stop-color="#1D4ED8"/>
+              </linearGradient>
+              <linearGradient id="sf-amber" x1="0%" y1="0%" x2="100%" y2="100%">
+                <stop offset="0%" stop-color="#FBBF24"/>
+                <stop offset="55%" stop-color="#F59E0B"/>
+                <stop offset="100%" stop-color="#D97706"/>
+              </linearGradient>
+            </defs>
+            <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#sf-bg)"/>
+            <rect x="20" y="20" width="472" height="472" rx="112" fill="url(#sf-glow)"/>
+            <rect x="23" y="23" width="466" height="466" rx="109" fill="none" stroke="url(#sf-rim)" stroke-width="5"/>
+            <circle class="sf-blueprint-ring" cx="256" cy="256" r="176" fill="none" stroke="#93C5FD" stroke-opacity="0.22" stroke-width="3" stroke-dasharray="10 12"/>
+            <g>
+              <path d="M 134 226 L 246 290 L 246 404 L 134 340 Z" fill="url(#sf-left)" stroke="#60A5FA" stroke-opacity="0.35" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M 378 226 L 266 290 L 266 404 L 378 340 Z" fill="#1E293B" stroke="#94A3B8" stroke-opacity="0.32" stroke-width="2" stroke-linejoin="round"/>
+              <path d="M 290 302 L 354 265 L 354 295 L 290 332 Z" fill="url(#sf-amber)" opacity="0.94"/>
+              <path class="sf-lid" d="M 256 106 L 378 176 L 332 202 L 256 158 L 180 202 L 134 176 Z" fill="url(#sf-top)"/>
+              <path class="sf-launch-core" d="M 256 174 L 322 212 L 256 250 L 190 212 Z" fill="url(#sf-amber)"/>
+            </g>
+          </svg>
+        </div>
+        <div class="state-badge" id="stateBadge" aria-hidden="true">
+          <svg id="badgeIconOk" width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2.5 7.5l3 3 6-6.5"/>
+          </svg>
+          <svg id="badgeIconErr" class="hidden" width="12" height="12" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round">
+            <path d="M7 3.5v4.2M7 10.4h.01"/>
+          </svg>
+        </div>
+      </div>
+
+      <h1 class="title" id="titleText">正在准备自动更新</h1>
+      <p class="detail" id="detailText" role="status" aria-live="polite">正在等待主程序安全退出…</p>
+    </section>
+
+    <section class="bar-section">
+      <div class="bar-row">
+        <progress class="linear-bar" id="barProgress" value="4" max="100" aria-label="更新总体进度"></progress>
+        <span class="pct" id="pctText">4%</span>
+      </div>
+      <div class="meta-row">
+        <span id="metaLeft">全自动静默升级 · 项目配置完整保留</span>
+        <span id="metaRight"></span>
+      </div>
+      <div class="steps" aria-hidden="true">
+        <div class="step is-active" data-step="0"><span class="step-dot"></span>下载</div>
+        <div class="step" data-step="1"><span class="step-dot"></span>校验</div>
+        <div class="step" data-step="2"><span class="step-dot"></span>安装</div>
+        <div class="step" data-step="3"><span class="step-dot"></span>启动</div>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span class="hint" id="footerHint">无需手动卸载或点击安装向导</span>
+      <div class="actions">
+        <button class="btn btn-ghost hidden" id="btnCancel" type="button">取消</button>
+        <button class="btn btn-ghost hidden" id="btnReopen" type="button">打开原版本</button>
+        <button class="btn btn-ghost hidden" id="btnManual" type="button">手动安装</button>
+        <button class="btn btn-accent hidden" id="btnElevate" type="button">管理员重试</button>
+        <button class="btn btn-accent hidden" id="btnRetry" type="button">重试</button>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    (function () {
+      const tauri = window.__TAURI__;
+      const invoke = (cmd, args = {}) => tauri?.core?.invoke(cmd, args);
+      const listen = (ev, cb) => tauri?.event?.listen(ev, cb);
+
+      const shell = document.getElementById("shell");
+      const verBadge = document.getElementById("verBadge");
+      const ringEl = document.getElementById("ringProgress");
+      const barEl = document.getElementById("barProgress");
+      const pctEl = document.getElementById("pctText");
+      const titleEl = document.getElementById("titleText");
+      const detailEl = document.getElementById("detailText");
+      const metaLeft = document.getElementById("metaLeft");
+      const metaRight = document.getElementById("metaRight");
+      const footerHint = document.getElementById("footerHint");
+      const badgeOk = document.getElementById("badgeIconOk");
+      const badgeErr = document.getElementById("badgeIconErr");
+
+      const btnClose = document.getElementById("btnClose");
+      const btnCancel = document.getElementById("btnCancel");
+      const btnReopen = document.getElementById("btnReopen");
+      const btnManual = document.getElementById("btnManual");
+      const btnElevate = document.getElementById("btnElevate");
+      const btnRetry = document.getElementById("btnRetry");
+      const stepEls = Array.from(document.querySelectorAll(".step"));
+
+      let currentJob = null;
+      let canCancelNow = true;
+
+      function fmtBytes(n) {
+        const v = Number(n) || 0;
+        if (v < 1024) return v + " B";
+        if (v < 1024 * 1024) return (v / 1024).toFixed(1) + " KB";
+        return (v / (1024 * 1024)).toFixed(2) + " MB";
+      }
+
+      function setProgress(pct) {
+        const clamped = Math.max(0, Math.min(100, Number(pct) || 0));
+        const rounded = Math.round(clamped);
+        ringEl.value = rounded;
+        ringEl.style.setProperty("--ring-pct", clamped.toFixed(1));
+        ringEl.setAttribute("aria-valuetext", rounded + "%");
+        barEl.value = rounded;
+        pctEl.textContent = rounded + "%";
+      }
+
+      function setSteps(activeIdx, isDone, isError) {
+        stepEls.forEach((el, idx) => {
+          el.classList.remove("is-active", "is-done");
+          if (isDone || idx < activeIdx) {
+            el.classList.add("is-done");
+          } else if (idx === activeIdx && !isError) {
+            el.classList.add("is-active");
+          }
+        });
+      }
+
+      function applyState(ev) {
+        const phase = ev.phase || "waiting_exit";
+        const isDone = phase === "done";
+        const isErr = phase === "error";
+        const isCancelled = phase === "cancelled";
+        const busy = !isDone && !isErr && !isCancelled;
+
+        shell.dataset.phase = phase;
+        shell.dataset.busy = busy ? "true" : "false";
+
+        badgeOk.classList.toggle("hidden", isErr);
+        badgeErr.classList.toggle("hidden", !isErr);
+
+        if (ev.title) titleEl.textContent = ev.title;
+        if (ev.detail) detailEl.textContent = ev.detail;
+        if (!isErr && !isCancelled) {
+          setProgress(ev.percent);
+        }
+        setSteps(Number(ev.stepIndex) || 0, isDone, isErr || isCancelled);
+
+        if (phase === "downloading" && ev.total > 0) {
+          metaLeft.textContent = fmtBytes(ev.downloaded) + " / " + fmtBytes(ev.total);
+          metaRight.textContent = ev.speedBps > 0 ? fmtBytes(ev.speedBps) + "/s" : "";
+        } else if (phase === "installing") {
+          metaLeft.textContent = currentJob?.packageKind === "portable"
+            ? "便携版原子替换 · 异常自动回滚"
+            : "静默升级安装 · 保留全部配置与快捷方式";
+          metaRight.textContent = "";
+        } else if (isDone) {
+          metaLeft.textContent = "升级已完成";
+          metaRight.textContent = "";
+        } else if (isErr) {
+          metaLeft.textContent = "可重试或恢复原版本";
+          metaRight.textContent = "";
+        } else {
+          metaLeft.textContent = "全自动静默升级 · 项目配置完整保留";
+          metaRight.textContent = "";
+        }
+
+        canCancelNow = Boolean(ev.canCancel) || isErr || isCancelled;
+        btnClose.disabled = !canCancelNow;
+        btnCancel.classList.toggle("hidden", !ev.canCancel);
+        btnRetry.classList.toggle("hidden", !(ev.canRetry && !ev.canElevate));
+        btnElevate.classList.toggle("hidden", !ev.canElevate);
+        btnManual.classList.toggle("hidden", !ev.canManual);
+        btnReopen.classList.toggle("hidden", !(isErr || isCancelled));
+
+        footerHint.classList.toggle("hidden", isErr || isCancelled || Boolean(ev.canCancel));
+        if (phase === "installing") {
+          footerHint.textContent = "请稍候，安装期间请勿强制结束进程";
+        } else if (phase === "launching" || isDone) {
+          footerHint.textContent = "即将自动打开新版本 ShipForge";
+        } else {
+          footerHint.textContent = "无需手动卸载或点击安装向导";
+        }
+      }
+
+      btnCancel.addEventListener("click", () => invoke("updater_host_cancel"));
+      btnClose.addEventListener("click", () => {
+        if (!canCancelNow) return;
+        const ph = shell.dataset.phase;
+        if (ph === "error" || ph === "cancelled") {
+          invoke("updater_host_reopen_app");
+        } else {
+          invoke("updater_host_cancel");
+        }
+      });
+      btnRetry.addEventListener("click", () => invoke("updater_host_retry", { elevate: false }));
+      btnElevate.addEventListener("click", () => invoke("updater_host_retry", { elevate: true }));
+      btnManual.addEventListener("click", () => invoke("updater_host_open_manual"));
+      btnReopen.addEventListener("click", () => invoke("updater_host_reopen_app"));
+
+      async function boot() {
+        await listen("updater-host-progress", (event) => {
+          if (event && event.payload) applyState(event.payload);
+        });
+        await listen("updater-progress", (event) => {
+          const p = event && event.payload;
+          if (!p) return;
+          const total = Number(p.total) || Number(currentJob?.size) || 0;
+          const dl = Number(p.downloaded) || 0;
+          const rawPct = total > 0 ? Math.min(100, (dl / total) * 100) : Number(p.percent) || 0;
+          if (p.phase === "verifying") {
+            applyState({
+              phase: "verifying",
+              stepIndex: 1,
+              percent: 64,
+              title: "正在校验安装包签名",
+              detail: "正在核对 SHA-256 哈希与二进制完整性…",
+              downloaded: total,
+              total,
+              speedBps: 0,
+              canCancel: false,
+            });
+          } else {
+            applyState({
+              phase: "downloading",
+              stepIndex: 0,
+              percent: 6 + rawPct * 0.54,
+              title: "正在下载 ShipForge v" + (currentJob?.targetVersion || ""),
+              detail: "官方安全通道高速下载中…",
+              downloaded: dl,
+              total,
+              speedBps: Number(p.speedBps) || 0,
+              canCancel: true,
+            });
+          }
+        });
+
+        try {
+          const job = await invoke("updater_host_init");
+          if (job) {
+            currentJob = job;
+            if (job.theme === "light" || job.theme === "dark") {
+              document.documentElement.dataset.theme = job.theme;
+            }
+            verBadge.textContent = "v" + job.currentVersion + " → v" + job.targetVersion;
+          }
+        } catch (err) {
+          applyState({
+            phase: "error",
+            stepIndex: 0,
+            percent: 0,
+            title: "初始化更新窗口失败",
+            detail: String(err || "未知错误"),
+            canRetry: true,
+          });
+        }
+      }
+
+      boot();
+    })();
+  </script>
+</body>
+</html>

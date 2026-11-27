@@ -1191,6 +1191,20 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
           </div>
         </div>
 
+        <div class="sf-row">
+          <div class="sf-row-meta">
+            <div class="sf-row-title">同步覆盖线上 latest.json</div>
+            <div class="sf-row-desc">仅同步更新本地并覆盖线上 latest.json 的说明文案，不重新上传安装包与便携包（版本不一致时自动跳过防误覆盖）</div>
+          </div>
+          <div class="sf-row-ctrl">
+            <input class="sf-switch" type="checkbox" switch role="switch" id="mpEditSyncManifest" ${
+              rel.tagName.replace(/^v/i, "").toLowerCase() === String(versions?.current || "").replace(/^v/i, "").toLowerCase()
+                ? "checked"
+                : ""
+            } aria-label="同步覆盖线上 latest.json">
+          </div>
+        </div>
+
         <div class="sf-row sf-row-stack">
           <div class="field" style="width:100%">
             <label for="mpEditNotes">发布说明 (Markdown)</label>
@@ -1249,7 +1263,9 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
       const notes = pane.querySelector("#mpEditNotes")?.value ?? rel.body ?? "";
       const prerelease = !!pane.querySelector("#mpEditPre")?.checked;
       const draft = overrideDraft !== null ? overrideDraft : !!pane.querySelector("#mpEditDraft")?.checked;
-      await withBusy(btn, "保存中…", async () => {
+      const syncLatestJson =
+        overrideDraft === null && !!pane.querySelector("#mpEditSyncManifest")?.checked;
+      await withBusy(btn, syncLatestJson ? "保存并同步清单…" : "保存中…", async () => {
         try {
           const updated = await API.updateReleaseMulti({
             projectId: project.id,
@@ -1263,29 +1279,50 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
             notes,
             prerelease,
             draft,
+            syncLatestJson,
           });
+          // Merge assets safely: if provider PATCH omits existing binaries and only returns updated latest.json, preserve existing binaries
+          const prevAssets = Array.isArray(rel.assets) ? rel.assets : [];
+          const nextAssets = Array.isArray(updated.assets) ? updated.assets : [];
+          let mergedAssets = nextAssets.length ? nextAssets : prevAssets;
+          if (
+            nextAssets.length === 1 &&
+            nextAssets[0].name?.toLowerCase() === "latest.json" &&
+            prevAssets.length > 1
+          ) {
+            mergedAssets = [
+              ...prevAssets.filter((a) => a.name?.toLowerCase() !== "latest.json"),
+              nextAssets[0],
+            ];
+          }
           // Replace in local cache & re-render immediately
           const idx = releasesList.findIndex((r) => relKey(r) === relKey(rel));
           if (idx >= 0) {
             releasesList[idx] = {
               ...updated,
-              assets: updated.assets?.length ? updated.assets : rel.assets || [],
+              assets: mergedAssets,
             };
             selectedReleaseKey = relKey(releasesList[idx]);
           }
-          toast(
+          const msg =
             overrideDraft === true
               ? `已将 ${rel.tagName} 下架转为草稿（资产已保留）`
               : overrideDraft === false
                 ? `已将 ${rel.tagName} 重新公开上线`
-                : `已更新 Release ${rel.tagName}`,
-            "ok",
-            3200
+                : updated.manifestSynced
+                  ? `已更新 Release ${rel.tagName} 并同步覆盖线上 latest.json`
+                  : updated.manifestSyncMessage
+                    ? updated.manifestSyncMessage
+                    : `已更新 Release ${rel.tagName}`;
+          toast(
+            msg,
+            syncLatestJson && !updated.manifestSynced && updated.manifestSyncMessage ? "warn" : "ok",
+            syncLatestJson ? 4600 : 3200
           );
           paintReleasesSidebar();
           paintRightPane();
         } catch (err) {
-          toast(`${err}`, "err", 4800);
+          toast(`${err}`, "err", 5200);
         }
       });
     };

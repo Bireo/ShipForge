@@ -1,28 +1,28 @@
 {
   "schemaVersion": 1,
-  "version": "1.4.0",
+  "version": "1.5.0",
   "channel": "stable",
-  "pubDate": "2026-11-26T21:53:26+08:00",
+  "pubDate": "2026-11-27T18:43:33+08:00",
   "minVersion": "",
-  "notes": "## 1.4.0 (2026-11-26) —— 界面去重收口、内置官方在线自动更新与独立 GitHub 仓库部署\n\n- **界面去重与布局收口**（`index.html`、`styles.css`、`preferences.js`、`overview.js`、`version.js`、`manage.js`、`package.js`）：\n  - 删除左侧栏底部重复的「偏好设置 (`Ctrl+,`)」按钮，仅保留顶部工具栏唯一入口（带新版本提示圆点）并重新平衡侧栏底部按钮与版本信息间距。\n  - 统一清理跨页面重复功能按钮：移除「版本与源码」顶栏与「通用与外观 / 当前项目配置」中重复的「打开数据目录」（保留于「存储与扫描」）及重复的「移出此项目」（保留于「当前项目配置」与项目右键菜单）；移除「发版总览」顶栏与工具栏重复的「变动扫描」及重复的「配置向导」入口；移除「分析与分包」顶栏与分段标签重复的切换按钮。\n- **内置官方在线自动更新引擎**（`updater.rs`、`preferences.js`、`app.js`）：\n  - 完整移植三通道容错更新架构（`latest.json` 主源 → 302 标签直链 → GitHub Releases API / 零限流 Atom 预发布源），严格锁定 `3347567186/ShipForge` 官方仓库域名与路径、拦截 HTTPS 降级与非官方重定向。\n  - 支持断点续传、取消下载、SHA-256 与 PE/ZIP 文件头双校验、安装版 (NSIS) 与便携版 (ZIP) 双形态自动升级（便携版解压防 Zip Slip 与 ZIP 炸弹、替换失败自动回滚旧版），且在有运行中构建/发版任务时拒绝中断安装。\n  - 偏好设置新增独立「版本与更新」面板（收口版本信息、通道切换、启动静默检测、缓存清理与离线/远端变更记录同步），启动后延迟 6 秒静默检查更新。\n- **独立 GitHub 仓库与发包推送体系**：新增 `tools/publish-release.ps1`、`LICENSE`、`.gitignore`、中英文 `README`、GitHub Pages 官网及 `.github/workflows` 自动化配置。",
+  "notes": "## 1.5.0 (2026-11-27) —— 全自动静默更新小窗、线上日志与 latest.json 联动同步、仓库切换至 Bireo/ShipForge\n\n- **一键全自动更新，彻底告别手动卸载与安装向导**（`updater_host.rs`、`updater.rs`、`main.rs`、`preferences.js`）：\n  - 点击「一键自动更新」后，主程序自动校验安全边界并退出，无缝切换为独立置顶的品牌进度小窗（`shipforge-updater.exe` 独立宿主与隔离 WebView2 目录，零文件锁冲突）。\n  - 安装版自动通过 NSIS `/S /UPDATE /D=<app_dir>` 执行静默就地升级（跳过旧版卸载确认与向导页），便携版改用纯 Rust 原子备份替换与异常自动回滚，不再依赖隐藏 PowerShell 脚本；完成后自动拉起新版并异步清理临时宿主目录。\n  - 若遇安装目录权限受限，弹窗内直接提供「管理员重试」「手动安装」与「打开原版本」兜底动作，绝不中断失联。\n- **融合 ShipForge 官方 Logo 的专属进度弹窗**（`src/web/updater.html`）：\n  - 以 ShipForge 等距锻造立方体 Logo 为视觉中心：外圈采用语义化 `<progress>` 圆环进度光晕，内置动态旋转蓝图构造环、悬浮脉动熔铸琥珀核心与微抬精密顶盖动效，配合 4 步进度轨道（下载 · 校验 · 安装 · 启动）与浅/深双色自适应主题。\n  - 新增 `--preview-updater` 预览模式与端到端单元测试覆盖。\n- **线上 Release 说明与 `latest.json` 一键联动同步**（`repo_client.rs`、`packager.rs`、`main.rs`、`release.js`、`version.js`）：\n  - 在「产物与仓库 → 线上发行版」编辑面板新增「同步覆盖线上 latest.json」开关，保存 Release 说明时可选仅覆盖更新本地与线上 `latest.json`（不重传安装包/便携包，强制版本一致性与公网 URL / SHA-256 / 远端产物存在性安全门禁，支持 GitHub 含草稿 / Gitee / Gitea / GitLab）。\n  - 在「版本与源码 → 变更日志」撰写与阅读视图新增「同步线上日志」一键按钮，写入变更记录时自动同步本地同版本 `latest.json`。\n- **修复 Git 更新日志草拟器被 `docs:` 提交劫持的 Bug**（`git_ops.rs`、`main.rs`、`version.js`）：\n  - 当区间内存在 `pre-build` 快照或工作区源码/引擎改动且仅有 `docs:`/`chore:` 类提交时，优先在「更新内容」顶部列出源码与子引擎改动摘要及增删行数；草拟接口改为传入真实项目配置与目标版本号。\n- **GitHub 仓库与更新源迁移至 `Bireo/ShipForge`**（`updater.rs`、`updater_host.rs`、`preferences.js`、`tools/publish-release.ps1`、`website/`、`README`）：同步切换在线更新源白名单、发包脚本与 GitHub Pages（`https://bireo.github.io/ShipForge/`）。",
   "installer": {
-    "file": "ShipForge_1.4.0_x64-setup.exe",
-    "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-setup.exe",
-    "size": 3567860,
-    "sha256": "3b5ceefe22f92ce0863e489ba66ff0ff9dc8ee1139a5ec1d46be46e91a684eab"
+    "file": "ShipForge_1.5.0_x64-setup.exe",
+    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-setup.exe",
+    "size": 3631859,
+    "sha256": "e86615a17c7b010c894dfbb72f7d42fcfbaa7a5c99878351c32118d3088078eb"
   },
   "platforms": {
     "windows-x86_64": {
-      "file": "ShipForge_1.4.0_x64-setup.exe",
-      "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-setup.exe",
-      "size": 3567860,
-      "sha256": "3b5ceefe22f92ce0863e489ba66ff0ff9dc8ee1139a5ec1d46be46e91a684eab"
+      "file": "ShipForge_1.5.0_x64-setup.exe",
+      "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-setup.exe",
+      "size": 3631859,
+      "sha256": "e86615a17c7b010c894dfbb72f7d42fcfbaa7a5c99878351c32118d3088078eb"
     }
   },
   "portable": {
-    "file": "ShipForge_1.4.0_x64-portable.zip",
-    "url": "https://github.com/3347567186/ShipForge/releases/download/v1.4.0/ShipForge_1.4.0_x64-portable.zip",
-    "size": 4935926,
-    "sha256": "2651fc8f29f9ef0f1d1248e01387ff93c58a3840ae920574e6ae4168ae0f013d"
+    "file": "ShipForge_1.5.0_x64-portable.zip",
+    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-portable.zip",
+    "size": 5249317,
+    "sha256": "2e49f7e74c9b88a7f25fc0bb05cb44bec12a1262a4a10eaa846423288602b1cf"
   }
 }

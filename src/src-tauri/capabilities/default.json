@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Minimal window and event capabilities for ShipForge custom titlebar and streaming logs.",
-  "windows": ["main"],
+  "windows": ["main", "updater"],
   "permissions": [
     "core:default",
     "core:window:allow-minimize",

@@ -421,7 +421,6 @@ function renderUpdatesPane(container, app, isAlive) {
   let checking = false;
   let downloading = false;
   let cancelling = false;
-  let silentInstall = false;
   let changelogData = null;
   let unlistenProg = null;
   let unlistenChk = null;
@@ -527,7 +526,7 @@ function renderUpdatesPane(container, app, isAlive) {
         <div class="sf-row">
           <div class="sf-row-main">
             <div class="sf-row-title">ShipForge · 轻筑 <span class="tag mono">v${esc(curVer)}</span> <span class="tag">${esc(kindLabel)}</span></div>
-            <div class="sf-row-desc">官方源：GitHub Releases (3347567186/ShipForge) · 上次检查：${esc(lastCheck)}</div>
+            <div class="sf-row-desc">官方源：GitHub Releases (Bireo/ShipForge) · 上次检查：${esc(lastCheck)}</div>
           </div>
         </div>
       `;
@@ -651,76 +650,34 @@ function renderUpdatesPane(container, app, isAlive) {
             </div>
           </div>
           <div class="field-row" style="gap:6px">
-            ${
-              staged
-                ? `<button class="btn btn-xs btn-accent" id="updInstallBtn" type="button">立即安装并重启</button>`
-                : `<button class="btn btn-xs btn-accent" id="updDownloadBtn" type="button" ${downloading ? "disabled" : ""}>下载更新</button>`
-            }
+            <button class="btn btn-xs btn-accent" id="updAutoBtn" type="button" ${downloading ? "disabled" : ""}>${
+              staged ? "立即自动安装" : "一键自动更新"
+            }</button>
             <button class="btn btn-xs btn-ghost" id="updSkipVerBtn" type="button">${checkRes.isIgnored ? "已跳过" : "跳过此版本"}</button>
           </div>
         </div>
-        ${
-          staged && checkRes.packageKind === "installer"
-            ? `<label class="sf-switch-label" style="margin-bottom:8px"><input class="sf-switch" type="checkbox" switch id="updSilentSw" ${silentInstall ? "checked" : ""}><span>静默安装（后台自动升级并重启）</span></label>`
-            : ""
-        }
+        <div class="card-sub" style="margin-bottom:8px">点击后程序将自动退出并切换为小巧进度弹窗，静默完成更新并自动重启（无需手动卸载或点击安装向导）。</div>
         ${checkRes.notes ? `<pre class="upd-notes-pre">${esc(checkRes.notes)}</pre>` : ""}
       </section>
     `;
 
-    host.querySelector("#updSilentSw")?.addEventListener("change", (e) => {
-      silentInstall = e.currentTarget.checked;
-    });
-
-    host.querySelector("#updDownloadBtn")?.addEventListener("click", async () => {
+    host.querySelector("#updAutoBtn")?.addEventListener("click", async (e) => {
       if (downloading) return;
-      downloading = true;
-      cancelling = false;
-      syncDlBar({ phase: "downloading", downloaded: 0, total: checkRes.size || 0, percent: 0, speedBps: 0 });
-      paintResult();
-      try {
-        const info = await API.updaterDownload({
-          url: checkRes.downloadUrl,
-          sha256: checkRes.sha256,
-          size: checkRes.size,
-          version: checkRes.latestVersion,
-          fileName: checkRes.fileName,
-          packageKind: checkRes.packageKind,
-        });
-        downloading = false;
-        cancelling = false;
-        checkRes = { ...checkRes, staged: info };
-        app.pendingUpdate = checkRes;
-        await refreshStatus();
-        syncDlBar(null);
-        paintResult();
-        toast(`v${info.version} 已下载并通过 SHA-256 校验，可立即安装`, "ok", 3500);
-      } catch (err) {
-        downloading = false;
-        cancelling = false;
-        syncDlBar(null);
-        paintResult();
-        const msg = String(err || "");
-        toast(msg.includes("取消") ? "已取消更新下载" : `下载更新失败：${msg}`, msg.includes("取消") ? "warn" : "err", 4200);
-      }
-    });
-
-    host.querySelector("#updInstallBtn")?.addEventListener("click", async (e) => {
-      const ok = await confirmDialog({
-        title: `安装 ShipForge v${checkRes.latestVersion}`,
-        message:
-          checkRes.packageKind === "portable"
-            ? "将校验并原子替换当前便携版程序，完成后自动重启 ShipForge（失败会自动回滚旧版）。"
-            : "将退出当前 ShipForge 并启动已校验的官方安装程序完成升级。",
-        confirmText: "立即升级",
-      });
-      if (!ok) return;
-      withBusy(e.currentTarget, "准备安装…", async () => {
+      const activeTheme = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      withBusy(e.currentTarget, "正在切换更新弹窗…", async () => {
         try {
-          await API.updaterInstall(silentInstall);
-          toast("已启动升级引导，程序即将退出并完成更新…", "ok", 4000);
+          await API.updaterAutoUpdate({
+            url: checkRes.downloadUrl,
+            sha256: checkRes.sha256,
+            size: checkRes.size,
+            version: checkRes.latestVersion,
+            fileName: checkRes.fileName,
+            packageKind: checkRes.packageKind,
+            theme: activeTheme,
+          });
+          toast("已启动全自动更新小窗，程序即将退出并完成升级…", "ok", 3500);
         } catch (err) {
-          toast(`${err}`, "err", 4500);
+          toast(`${err}`, "err", 4800);
         }
       });
     });
@@ -805,7 +762,7 @@ function renderUpdatesPane(container, app, isAlive) {
   };
 
   container.querySelector("#updOpenReleasesBtn")?.addEventListener("click", () => {
-    const url = status?.releasesPage || "https://github.com/3347567186/ShipForge/releases";
+    const url = status?.releasesPage || "https://github.com/Bireo/ShipForge/releases";
     API.openExternalUrl(url).catch((err) => toast(`${err}`, "err"));
   });
 

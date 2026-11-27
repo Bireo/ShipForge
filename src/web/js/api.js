@@ -64,7 +64,8 @@ export const API = {
     invoke("resolve_release_notes_detail", { projectId, versionStr }),
   extractReleaseNotes: (projectId, versionStr) =>
     invoke("extract_release_notes", { projectId, versionStr }),
-  draftChangelogFromGit: (projectId) => invoke("draft_changelog_from_git", { projectId }),
+  draftChangelogFromGit: (projectId, versionStr = null) =>
+    invoke("draft_changelog_from_git", { projectId, versionStr }),
 
   runProjectAction: (opts) => invoke("run_project_action", opts),
   runCustomCommand: (opts) => invoke("run_custom_command", opts),
@@ -155,6 +156,7 @@ export const API = {
     invoke("list_releases_multi", { provider, baseUrl, credentialId, repo }),
   publishReleaseMulti: (req) => invoke("publish_release_multi", { req }),
   updateReleaseMulti: (req) => invoke("update_release_multi", { req }),
+  syncChangelogToOnlineRelease: (req) => invoke("sync_changelog_to_online_release", { req }),
   deleteReleaseMulti: (req) => invoke("delete_release_multi", { req }),
   deleteReleaseAssetMulti: (req) => invoke("delete_release_asset_multi", { req }),
   updaterStatus: () => invoke("updater_status"),
@@ -172,6 +174,16 @@ export const API = {
     }),
   updaterCancel: () => invoke("updater_cancel"),
   updaterClearCache: () => invoke("updater_clear_cache"),
+  updaterAutoUpdate: (opts) =>
+    invoke("updater_auto_update", {
+      url: opts.url,
+      sha256: opts.sha256,
+      size: opts.size || 0,
+      version: opts.version,
+      fileName: opts.fileName,
+      packageKind: opts.packageKind,
+      theme: opts.theme || null,
+    }),
   updaterInstall: (silent = false) => invoke("updater_install", { silent: !!silent }),
   updaterChangelog: (includeRemote = false) => invoke("updater_changelog", { includeRemote: !!includeRemote }),
 };

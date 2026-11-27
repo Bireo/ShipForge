@@ -785,6 +785,10 @@ pub struct GhReleaseItem {
     pub url: String,
     #[serde(default)]
     pub assets: Vec<ReleaseAssetItem>,
+    #[serde(default)]
+    pub manifest_synced: bool,
+    #[serde(default)]
+    pub manifest_sync_message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1044,6 +1048,36 @@ pub struct UpdateReleaseRequest {
     pub notes: String,
     pub prerelease: bool,
     pub draft: bool,
+    #[serde(default)]
+    pub sync_latest_json: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncChangelogOnlineRequest {
+    pub project_id: String,
+    pub version_str: String,
+    #[serde(default)]
+    pub summary: String,
+    pub body: String,
+    #[serde(default = "default_true_sync")]
+    pub write_changelog: bool,
+    #[serde(default = "default_true_sync")]
+    pub sync_latest_json: bool,
+}
+
+fn default_true_sync() -> bool {
+    true
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SyncChangelogOnlineResult {
+    pub tag_name: String,
+    pub url: String,
+    pub changelog_written: bool,
+    pub manifest_synced: bool,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

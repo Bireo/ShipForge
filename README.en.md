@@ -6,8 +6,8 @@
 
 A local Windows desktop studio for multi-framework builds, split packaging, atomic version sync, and multi-platform release publishing. Built with Tauri v2 and native Rust, MIT licensed, with built-in auto-updates.
 
-[![Official Website](https://img.shields.io/badge/Website-Live%20Site-2563eb?style=flat-square)](https://3347567186.github.io/ShipForge/?lang=en)
-[![Latest Release](https://img.shields.io/github/v/release/3347567186/ShipForge?style=flat-square&color=2ea043&label=Latest)](https://github.com/3347567186/ShipForge/releases/latest)
+[![Official Website](https://img.shields.io/badge/Website-Live%20Site-2563eb?style=flat-square)](https://bireo.github.io/ShipForge/?lang=en)
+[![Latest Release](https://img.shields.io/github/v/release/Bireo/ShipForge?style=flat-square&color=2ea043&label=Latest)](https://github.com/Bireo/ShipForge/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?style=flat-square)](#download--install)
 
@@ -15,7 +15,7 @@ A local Windows desktop studio for multi-framework builds, split packaging, atom
 
 <br />
 
-<a href="https://3347567186.github.io/ShipForge/?lang=en">
+<a href="https://bireo.github.io/ShipForge/?lang=en">
   <img src="docs/assets/social-preview.png" alt="ShipForge Preview" width="100%" />
 </a>
 
@@ -25,7 +25,7 @@ A local Windows desktop studio for multi-framework builds, split packaging, atom
 
 ## Features
 
-Browse interactive tabs and zoomable screenshots on the [website](https://3347567186.github.io/ShipForge/?lang=en), or review the core modules below.
+Browse interactive tabs and zoomable screenshots on the [website](https://bireo.github.io/ShipForge/?lang=en), or review the core modules below.
 
 ### 1. Release Overview & No-Rebuild Deployment
 
@@ -67,8 +67,8 @@ Inspect folder footprints and top large files before packaging. `.env`, private 
 
 Requires **Windows 10 / 11 (x64)**.
 
-- **Website**: https://3347567186.github.io/ShipForge/?lang=en
-- **Installer (~3.4 MB)**: Download `ShipForge_*_x64-setup.exe` from [GitHub Releases](https://github.com/3347567186/ShipForge/releases/latest)
+- **Website**: https://bireo.github.io/ShipForge/?lang=en
+- **Installer (~3.4 MB)**: Download `ShipForge_*_x64-setup.exe` from [GitHub Releases](https://github.com/Bireo/ShipForge/releases/latest)
 - **Portable ZIP (~4.7 MB)**: Download `ShipForge_*_x64-portable.zip`, extract, and launch `shipforge.exe`
 - **Checksums & updates**: Every release includes `SHA256SUMS.txt` and `latest.json`. Open `Preferences -> 版本与更新` inside the app to check, download, and install updates.
 
@@ -105,7 +105,7 @@ Configuration, managed tools, and update caches can be migrated off `C:` with SH
 Requirements: Windows x64, Rust 1.80+, Node.js 20+, PowerShell 7 (`pwsh`), NSIS 3.x.
 
 ```powershell
-git clone https://github.com/3347567186/ShipForge.git
+git clone https://github.com/Bireo/ShipForge.git
 cd ShipForge
 
 # 1. Run Rust, frontend, and website test gate
@@ -125,7 +125,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1 -Serve
 
 ---
 
-Licensed under [MIT](LICENSE). Issues and PRs are welcome at [GitHub Issues](https://github.com/3347567186/ShipForge/issues).
+Licensed under [MIT](LICENSE). Issues and PRs are welcome at [GitHub Issues](https://github.com/Bireo/ShipForge/issues).
 
 ---
 

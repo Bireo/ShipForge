@@ -511,4 +511,37 @@ assert.ok(
   "context-menu.js must show only the clicked region's actions, never a global dump of theme/prefs/manual/terminal toggles"
 );
 
-console.log("ShipForge frontend selftest: 全部通过 (21/21)");
+// 22. Branded mini auto-updater popup contract (ShipForge Logo + semantic <progress> + one-click flow)
+const updaterHtml = fs.readFileSync(path.join(webRoot, "updater.html"), "utf8");
+assert.ok(
+  updaterHtml.includes('class="sf-logo"') &&
+    updaterHtml.includes('class="sf-blueprint-ring"') &&
+    updaterHtml.includes('class="sf-launch-core"') &&
+    updaterHtml.includes('<progress class="logo-progress-ring"') &&
+    updaterHtml.includes('<progress class="linear-bar"') &&
+    updaterHtml.includes('updater_host_init') &&
+    updaterHtml.includes('updater-host-progress'),
+  "updater.html must embed ShipForge kinetic logo SVG, semantic progress ring/bar, and updater_host IPC"
+);
+assert.ok(
+  prefsSrc.includes("API.updaterAutoUpdate") &&
+    prefsSrc.includes('id="updAutoBtn"'),
+  "preferences.js must wire one-click automatic update entry"
+);
+
+// 23. Online Release notes + latest.json one-click sync contract (without re-uploading binaries)
+{
+  const syncApiSrc = fs.readFileSync(path.join(webRoot, "js", "api.js"), "utf8");
+  const syncVerSrc = fs.readFileSync(path.join(webRoot, "js", "pages", "version.js"), "utf8");
+  assert.ok(
+    syncApiSrc.includes('invoke("sync_changelog_to_online_release"') &&
+      releaseSrc.includes('id="mpEditSyncManifest"') &&
+      releaseSrc.includes("syncLatestJson") &&
+      syncVerSrc.includes('id="clSyncOnlineBtn"') &&
+      syncVerSrc.includes('id="clReadSyncOnlineBtn"') &&
+      syncVerSrc.includes("API.syncChangelogToOnlineRelease"),
+    "release.js & version.js must wire online Release notes + latest.json sync without re-uploading binaries"
+  );
+}
+
+console.log("ShipForge frontend selftest: 全部通过 (23/23)");

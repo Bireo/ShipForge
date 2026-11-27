@@ -6,8 +6,8 @@
 
 Windows 本地多框架构建、体积分析分包、多文件版本同步与多平台发布桌面工作台。基于 Tauri v2 + 原生 Rust 构建，MIT 开源，内置官方在线自动更新。
 
-[![Official Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-Live%20Site-2563eb?style=flat-square)](https://3347567186.github.io/ShipForge/)
-[![Latest Release](https://img.shields.io/github/v/release/3347567186/ShipForge?style=flat-square&color=2ea043&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/3347567186/ShipForge/releases/latest)
+[![Official Website](https://img.shields.io/badge/%E5%AE%98%E7%BD%91-Live%20Site-2563eb?style=flat-square)](https://bireo.github.io/ShipForge/)
+[![Latest Release](https://img.shields.io/github/v/release/Bireo/ShipForge?style=flat-square&color=2ea043&label=%E6%9C%80%E6%96%B0%E7%89%88%E6%9C%AC)](https://github.com/Bireo/ShipForge/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue?style=flat-square)](LICENSE)
 [![Platform](https://img.shields.io/badge/Windows-10%2F11%20x64-0078D6?style=flat-square)](#下载与安装)
 
@@ -15,7 +15,7 @@ Windows 本地多框架构建、体积分析分包、多文件版本同步与多
 
 <br />
 
-<a href="https://3347567186.github.io/ShipForge/">
+<a href="https://bireo.github.io/ShipForge/">
   <img src="docs/assets/social-preview.png" alt="ShipForge 界面预览" width="100%" />
 </a>
 
@@ -25,7 +25,7 @@ Windows 本地多框架构建、体积分析分包、多文件版本同步与多
 
 ## 主要功能
 
-完整交互演示与高清大图浏览可访问 [官网](https://3347567186.github.io/ShipForge/)，下面是核心工作区的实际界面。
+完整交互演示与高清大图浏览可访问 [官网](https://bireo.github.io/ShipForge/)，下面是核心工作区的实际界面。
 
 ### 1. 发版总览与免重编独立部署
 
@@ -67,8 +67,8 @@ Windows 本地多框架构建、体积分析分包、多文件版本同步与多
 
 支持 **Windows 10 / 11 (x64)**。
 
-- **官网**：https://3347567186.github.io/ShipForge/
-- **安装版（约 3.4 MB）**：在 [GitHub Releases](https://github.com/3347567186/ShipForge/releases/latest) 下载 `ShipForge_*_x64-setup.exe`
+- **官网**：https://bireo.github.io/ShipForge/
+- **安装版（约 3.4 MB）**：在 [GitHub Releases](https://github.com/Bireo/ShipForge/releases/latest) 下载 `ShipForge_*_x64-setup.exe`
 - **便携版（约 4.7 MB）**：在同一页面下载 `ShipForge_*_x64-portable.zip`，解压后直接运行 `shipforge.exe`
 - **校验与更新**：每次发布附带 `SHA256SUMS.txt` 与 `latest.json`。可在软件「偏好设置 → 版本与更新」一键检查、下载并完成升级。
 
@@ -105,7 +105,7 @@ Windows 本地多框架构建、体积分析分包、多文件版本同步与多
 环境要求：Windows x64、Rust 1.80+、Node.js 20+、PowerShell 7 (`pwsh`)、NSIS 3.x。
 
 ```powershell
-git clone https://github.com/3347567186/ShipForge.git
+git clone https://github.com/Bireo/ShipForge.git
 cd ShipForge
 
 # 1. 运行 Rust + 前端 + 官网全量测试门禁
@@ -127,7 +127,7 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1 -Serve
 
 ---
 
-本项目基于 [MIT License](LICENSE) 开源。欢迎提交 [Issue](https://github.com/3347567186/ShipForge/issues) 或 Pull Request。
+本项目基于 [MIT License](LICENSE) 开源。欢迎提交 [Issue](https://github.com/Bireo/ShipForge/issues) 或 Pull Request。
 
 ---
 

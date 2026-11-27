@@ -2,7 +2,7 @@
   ShipForge · 独立发包与在线更新推送脚本
   ------------------------------------------------------------------
   用法：
-    1) 生成 GitHub Releases 清单（默认指向 3347567186/ShipForge）：
+    1) 生成 GitHub Releases 清单（默认指向 Bireo/ShipForge）：
        pwsh -File .\tools\publish-release.ps1
 
     2) 生成清单并自动上传 GitHub Release（二进制优先，latest.json 最后上传）：
@@ -25,7 +25,7 @@ param(
   [ValidateSet('stable', 'beta')]
   [string]$Channel = 'stable',
   [string]$BaseUrl = '',
-  [string]$GitHubRepo = '3347567186/ShipForge',
+  [string]$GitHubRepo = 'Bireo/ShipForge',
   [string]$Notes = '',
   [string]$NotesFile = '',
   [string]$MinVersion = '',

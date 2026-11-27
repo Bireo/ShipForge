@@ -687,6 +687,8 @@ fn parse_release_item(prov: &str, item: &Value) -> Option<GhReleaseItem> {
         published_at,
         url,
         assets,
+        manifest_synced: false,
+        manifest_sync_message: String::new(),
     })
 }
 
@@ -871,6 +873,341 @@ fn update_release_multi_with_token(
     }
     let val = resp.json()?;
     parse_release_item(prov, &val).ok_or_else(|| anyhow!("已更新但返回数据缺少 tag_name"))
+}
+
+/// Overwrite ONLY `latest.json` on an existing online Release (without re-uploading binaries).
+/// Supports GitHub (including draft releases via release ID), Gitee, Gitea, and GitLab.
+pub fn sync_release_manifest_only(
+    release_dir: &Path,
+    req: &UpdateReleaseRequest,
+    remote_asset_names: &[String],
+) -> Result<Option<ReleaseAssetItem>> {
+    let prov = normalize_provider(&req.provider)?;
+    let (token, _) = resolve_token(&prov, &req.base_url, &req.credential_id)?;
+    sync_release_manifest_only_with_token(&prov, release_dir, req, &token, remote_asset_names)
+}
+
+fn sync_release_manifest_only_with_token(
+    prov: &str,
+    release_dir: &Path,
+    req: &UpdateReleaseRequest,
+    token: &str,
+    remote_asset_names: &[String],
+) -> Result<Option<ReleaseAssetItem>> {
+    let clean_repo = validate_repo_slug(&req.repo)?;
+    let root = provider_api_root(prov, &req.base_url)?;
+    let latest_path = crate::guardrails::resolve_confined_path(release_dir, "latest.json")
+        .map_err(|e| anyhow!("无法定位本地 latest.json：{}", e))?;
+    if !latest_path.is_file() {
+        return Err(anyhow!("本地 release 目录不存在 latest.json"));
+    }
+
+    // Security gate: version match + public URLs + valid SHA-256 + remote asset existence
+    crate::packager::validate_manifest_for_notes_sync(release_dir, &req.tag_name, remote_asset_names)?;
+    let expected_size = std::fs::metadata(&latest_path)?.len();
+    let mut headers = auth_headers(prov, token);
+    headers.push(("Content-Type", "application/json".into()));
+
+    match prov {
+        "github" => {
+            let rid = resolve_release_id_if_missing(
+                prov,
+                &root,
+                token,
+                &clean_repo,
+                &req.tag_name,
+                &req.release_id,
+            )?;
+            let get_url = format!("{}/repos/{}/releases/{}", root, clean_repo, rid);
+            let rel_resp = http_json_with_retry("GET", &get_url, &headers, None, token)?;
+            if rel_resp.status < 200 || rel_resp.status >= 300 {
+                return Err(anyhow!(
+                    "读取线上 GitHub Release 失败 (HTTP {})：{}",
+                    rel_resp.status,
+                    scrub_secret(&rel_resp.text(), token)
+                ));
+            }
+            let rel_json = rel_resp.json()?;
+            let rel_id_num = rel_json.get("id").and_then(|v| v.as_u64());
+            let upload_tmpl = rel_json
+                .get("upload_url")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            let upload_base = upload_tmpl.split('{').next().unwrap_or("").to_string();
+            if upload_base.is_empty() {
+                return Err(anyhow!("GitHub 未返回 upload_url，无法覆盖 latest.json"));
+            }
+            // Delete ONLY colliding `latest.json` asset(s), never touching installers/portables
+            if let Some(assets) = rel_json.get("assets").and_then(|a| a.as_array()) {
+                for a in assets {
+                    let aname = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    if aname.eq_ignore_ascii_case("latest.json") {
+                        if let Some(aid) = a.get("id").and_then(|x| x.as_u64()) {
+                            let del_url =
+                                format!("{}/repos/{}/releases/assets/{}", root, clean_repo, aid);
+                            let _ = http_json_with_retry("DELETE", &del_url, &headers, None, token);
+                        }
+                    }
+                }
+            }
+            let up_url = format!("{}?name=latest.json", upload_base);
+            let mut up_headers = auth_headers("github", token);
+            up_headers.push(("Content-Type", "application/json".into()));
+
+            let mut last_err = None;
+            for attempt in 0..=NET_RETRY_BACKOFF_MS.len() {
+                if attempt > 0 {
+                    if let Some(rn) = rel_id_num {
+                        delete_github_asset_by_name(&root, &headers, token, &clean_repo, rn, "latest.json");
+                    }
+                    std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
+                }
+                let mut f = File::open(&latest_path)?;
+                let cur_size = f.metadata()?.len();
+                match winhttp_request("POST", &up_url, &up_headers, Some((&mut f, cur_size)), |_, _| {}) {
+                    Ok(r) if r.status >= 200 && r.status < 300 => {
+                        if let Err(ve) = verify_uploaded_asset_response("latest.json", cur_size, &r) {
+                            if let Ok(val) = r.json() {
+                                if let Some(aid) = val.get("id").and_then(|x| x.as_u64()) {
+                                    let del_url = format!("{}/repos/{}/releases/assets/{}", root, clean_repo, aid);
+                                    let _ = http_json_with_retry("DELETE", &del_url, &headers, None, token);
+                                }
+                            }
+                            last_err = Some(ve);
+                            continue;
+                        }
+                        let asset = r.json().ok().map(|v| ReleaseAssetItem {
+                            id: json_id_to_string(v.get("id")),
+                            name: v
+                                .get("name")
+                                .and_then(|n| n.as_str())
+                                .unwrap_or("latest.json")
+                                .to_string(),
+                            size: v.get("size").and_then(|s| s.as_u64()).unwrap_or(cur_size),
+                            download_url: v
+                                .get("browser_download_url")
+                                .and_then(|u| u.as_str())
+                                .unwrap_or("")
+                                .to_string(),
+                        });
+                        return Ok(asset);
+                    }
+                    Ok(r) => {
+                        last_err = Some(anyhow!(
+                            "覆盖上传 latest.json 失败 (HTTP {})：{}",
+                            r.status,
+                            scrub_secret(&r.text(), token)
+                        ));
+                        if r.status == 422 && rel_id_num.is_some() && attempt < NET_RETRY_BACKOFF_MS.len() {
+                            continue;
+                        }
+                        if r.status < 500 && r.status != 429 {
+                            break;
+                        }
+                    }
+                    Err(e) => {
+                        last_err = Some(anyhow!("{}", scrub_secret(&e.to_string(), token)));
+                    }
+                }
+            }
+            Err(last_err.unwrap_or_else(|| anyhow!("覆盖上传 GitHub latest.json 失败")))
+        }
+        "gitee" => {
+            let rid = resolve_release_id_if_missing(
+                prov,
+                &root,
+                token,
+                &clean_repo,
+                &req.tag_name,
+                &req.release_id,
+            )?;
+            let get_url = format!(
+                "{}/api/v5/repos/{}/releases/{}?access_token={}",
+                root,
+                clean_repo,
+                rid,
+                encode_uri_component(token)
+            );
+            if let Ok(rel_resp) = http_json_with_retry("GET", &get_url, &headers, None, token) {
+                if rel_resp.status == 200 {
+                    if let Ok(rel_json) = rel_resp.json() {
+                        if let Some(assets) = rel_json.get("assets").and_then(|a| a.as_array()) {
+                            for a in assets {
+                                let aname = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                if aname.eq_ignore_ascii_case("latest.json") {
+                                    if let Some(aid) = a.get("id").and_then(|x| x.as_u64()) {
+                                        let del_url = format!(
+                                            "{}/api/v5/repos/{}/releases/{}/attach_files/{}?access_token={}",
+                                            root,
+                                            clean_repo,
+                                            rid,
+                                            aid,
+                                            encode_uri_component(token)
+                                        );
+                                        let _ = http_json_with_retry("DELETE", &del_url, &headers, None, token);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let up_url = format!(
+                "{}/api/v5/repos/{}/releases/{}/attach_files?access_token={}",
+                root,
+                clean_repo,
+                rid,
+                encode_uri_component(token)
+            );
+            let boundary = format!("ShipForgeSyncGitee{}", chrono::Local::now().timestamp_nanos_opt().unwrap_or(1));
+            let mut up_headers = auth_headers("gitee", token);
+            up_headers.push(("Content-Type", format!("multipart/form-data; boundary={}", boundary)));
+            let (mut reader, total_len) = MultipartFileReader::new("file", "latest.json", &latest_path, &boundary)?;
+            let resp = winhttp_request("POST", &up_url, &up_headers, Some((&mut reader, total_len)), |_, _| {})?;
+            if resp.status < 200 || resp.status >= 300 {
+                return Err(anyhow!(
+                    "覆盖上传 Gitee latest.json 失败 (HTTP {})：{}",
+                    resp.status,
+                    scrub_secret(&resp.text(), token)
+                ));
+            }
+            verify_uploaded_asset_response("latest.json", expected_size, &resp)?;
+            let asset = resp.json().ok().map(|v| ReleaseAssetItem {
+                id: json_id_to_string(v.get("id")),
+                name: "latest.json".into(),
+                size: expected_size,
+                download_url: v
+                    .get("browser_download_url")
+                    .or_else(|| v.get("url"))
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            });
+            Ok(asset)
+        }
+        "gitea" => {
+            let rid = resolve_release_id_if_missing(
+                prov,
+                &root,
+                token,
+                &clean_repo,
+                &req.tag_name,
+                &req.release_id,
+            )?;
+            let get_url = format!("{}/api/v1/repos/{}/releases/{}", root, clean_repo, rid);
+            if let Ok(rel_resp) = http_json_with_retry("GET", &get_url, &headers, None, token) {
+                if rel_resp.status == 200 {
+                    if let Ok(rel_json) = rel_resp.json() {
+                        if let Some(assets) = rel_json.get("assets").and_then(|a| a.as_array()) {
+                            for a in assets {
+                                let aname = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                                if aname.eq_ignore_ascii_case("latest.json") {
+                                    if let Some(aid) = a.get("id").and_then(|x| x.as_u64()) {
+                                        let del_url = format!(
+                                            "{}/api/v1/repos/{}/releases/{}/assets/{}",
+                                            root, clean_repo, rid, aid
+                                        );
+                                        let _ = http_json_with_retry("DELETE", &del_url, &headers, None, token);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            let up_url = format!(
+                "{}/api/v1/repos/{}/releases/{}/assets?name=latest.json",
+                root, clean_repo, rid
+            );
+            let boundary = format!("ShipForgeSyncGitea{}", chrono::Local::now().timestamp_nanos_opt().unwrap_or(2));
+            let mut up_headers = auth_headers("gitea", token);
+            up_headers.push(("Content-Type", format!("multipart/form-data; boundary={}", boundary)));
+            let (mut reader, total_len) =
+                MultipartFileReader::new("attachment", "latest.json", &latest_path, &boundary)?;
+            let resp = winhttp_request("POST", &up_url, &up_headers, Some((&mut reader, total_len)), |_, _| {})?;
+            if resp.status < 200 || resp.status >= 300 {
+                return Err(anyhow!(
+                    "覆盖上传 Gitea latest.json 失败 (HTTP {})：{}",
+                    resp.status,
+                    scrub_secret(&resp.text(), token)
+                ));
+            }
+            verify_uploaded_asset_response("latest.json", expected_size, &resp)?;
+            let asset = resp.json().ok().map(|v| ReleaseAssetItem {
+                id: json_id_to_string(v.get("id")),
+                name: "latest.json".into(),
+                size: expected_size,
+                download_url: v
+                    .get("browser_download_url")
+                    .or_else(|| v.get("url"))
+                    .and_then(|u| u.as_str())
+                    .unwrap_or("")
+                    .to_string(),
+            });
+            Ok(asset)
+        }
+        "gitlab" => {
+            let enc_repo = encode_uri_component(&clean_repo);
+            let pkg_ver = req
+                .tag_name
+                .trim()
+                .trim_start_matches('v')
+                .trim_start_matches('V');
+            let pkg_ver = if pkg_ver.is_empty() { "0.0.0" } else { pkg_ver };
+            let up_url = format!(
+                "{}/api/v4/projects/{}/packages/generic/shipforge/{}/latest.json",
+                root,
+                enc_repo,
+                encode_uri_component(pkg_ver)
+            );
+            let mut up_headers = auth_headers("gitlab", token);
+            up_headers.push(("Content-Type", "application/json".into()));
+            let mut f = File::open(&latest_path)?;
+            let resp = winhttp_request("PUT", &up_url, &up_headers, Some((&mut f, expected_size)), |_, _| {})?;
+            if resp.status < 200 || resp.status >= 300 {
+                return Err(anyhow!(
+                    "覆盖上传 GitLab latest.json 失败 (HTTP {})：{}",
+                    resp.status,
+                    scrub_secret(&resp.text(), token)
+                ));
+            }
+            let links_url = format!(
+                "{}/api/v4/projects/{}/releases/{}/assets/links",
+                root,
+                enc_repo,
+                encode_uri_component(req.tag_name.trim())
+            );
+            let has_link = http_json_with_retry("GET", &links_url, &headers, None, token)
+                .ok()
+                .filter(|r| r.status == 200)
+                .and_then(|r| r.json().ok())
+                .and_then(|v| v.as_array().cloned())
+                .map(|arr| {
+                    arr.iter().any(|x| {
+                        x.get("name")
+                            .and_then(|n| n.as_str())
+                            .map(|s| s.eq_ignore_ascii_case("latest.json"))
+                            .unwrap_or(false)
+                    })
+                })
+                .unwrap_or(false);
+            if !has_link {
+                let link = serde_json::json!({
+                    "name": "latest.json",
+                    "url": up_url,
+                    "link_type": "package",
+                });
+                let _ = http_json_with_retry("POST", &links_url, &headers, Some(&link), token);
+            }
+            Ok(Some(ReleaseAssetItem {
+                id: String::new(),
+                name: "latest.json".into(),
+                size: expected_size,
+                download_url: up_url,
+            }))
+        }
+        _ => Err(anyhow!("暂不支持的仓库平台：{}", prov)),
+    }
 }
 
 /// Recall / delete an online Release, with optional deletion of its remote and/or local Git tag.
@@ -2033,6 +2370,7 @@ mod tests {
                 notes: "Updated notes".into(),
                 prerelease: false,
                 draft: true,
+                sync_latest_json: false,
             },
             tok,
         )
@@ -2316,6 +2654,141 @@ mod tests {
         assert!(pos_bin_ok < pos_del_latest, "old latest.json (502) must NOT be deleted before binary upload succeeds: {:?}", log);
         assert!(pos_del_latest < pos_up_latest, "old latest.json must be deleted right before new latest.json upload: {:?}", log);
 
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_sync_release_manifest_only_overwrites_latest_json_and_enforces_safety_gates() {
+        let base = std::env::temp_dir().join(format!(
+            "shipforge_sync_manifest_{}",
+            chrono::Local::now().timestamp_nanos_opt().unwrap_or(0)
+        ));
+        std::fs::create_dir_all(&base).unwrap();
+
+        let fake_sha = "a".repeat(64);
+        let latest_body = serde_json::json!({
+            "version": "1.4.1",
+            "notes": "### 更新内容\n- 修复清理耗时与清不掉",
+            "installer": {
+                "file": "App_1.4.1_x64-setup.exe",
+                "url": "https://github.com/acme/app/releases/download/v1.4.1/App_1.4.1_x64-setup.exe",
+                "sha256": fake_sha,
+                "size": 102400
+            }
+        });
+        let latest_raw = serde_json::to_string_pretty(&latest_body).unwrap();
+        let latest_path = base.join("latest.json");
+        std::fs::write(&latest_path, &latest_raw).unwrap();
+        let latest_len = std::fs::metadata(&latest_path).unwrap().len();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let api_root = format!("http://127.0.0.1:{}", port);
+        let events = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let ev_srv = events.clone();
+        let up_base = format!("http://127.0.0.1:{}/upload", port);
+
+        let srv = std::thread::spawn(move || {
+            for _ in 0..3 {
+                let Ok((mut stream, _)) = listener.accept() else {
+                    break;
+                };
+                let mut buf = [0u8; 8192];
+                let n = stream.read(&mut buf).unwrap_or(0);
+                let req_text = String::from_utf8_lossy(&buf[..n]);
+                let first_line = req_text.lines().next().unwrap_or("").to_string();
+                let (status, body) = if first_line.starts_with("GET /repos/acme/app/releases/77") {
+                    ev_srv.lock().unwrap().push("GET_RELEASE_77".into());
+                    (
+                        "200 OK",
+                        format!(
+                            r#"{{"id":77,"tag_name":"v1.4.1","draft":true,"upload_url":"{}{{?name,label}}","assets":[{{"id":801,"name":"App_1.4.1_x64-setup.exe","size":102400}},{{"id":802,"name":"latest.json","size":500}}]}}"#,
+                            up_base
+                        ),
+                    )
+                } else if first_line.starts_with("DELETE /repos/acme/app/releases/assets/802") {
+                    ev_srv.lock().unwrap().push("DELETE_LATEST_802".into());
+                    ("204 No Content", String::new())
+                } else if first_line.starts_with("POST /upload?name=latest.json") {
+                    ev_srv.lock().unwrap().push("UPLOAD_LATEST".into());
+                    (
+                        "201 Created",
+                        format!(
+                            r#"{{"id":803,"name":"latest.json","state":"uploaded","size":{},"browser_download_url":"https://github.com/acme/app/releases/download/v1.4.1/latest.json"}}"#,
+                            latest_len
+                        ),
+                    )
+                } else {
+                    ev_srv.lock().unwrap().push(format!("UNEXPECTED:{}", first_line));
+                    ("404 Not Found", r#"{"message":"unexpected"}"#.into())
+                };
+                let resp = format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+            }
+        });
+
+        let req = UpdateReleaseRequest {
+            project_id: "demo".into(),
+            provider: "github".into(),
+            base_url: api_root.clone(),
+            credential_id: String::new(),
+            repo: "acme/app".into(),
+            release_id: "77".into(),
+            tag_name: "v1.4.1".into(),
+            title: "App v1.4.1".into(),
+            notes: "### 更新内容\n- 修复清理耗时与清不掉".into(),
+            prerelease: false,
+            draft: true,
+            sync_latest_json: true,
+        };
+
+        // 1. Safety gate: must reject mismatched version tag without hitting network
+        let mut wrong_ver = req.clone();
+        wrong_ver.tag_name = "v1.4.0".into();
+        let err_ver = sync_release_manifest_only_with_token(
+            "github",
+            &base,
+            &wrong_ver,
+            "tok",
+            &["App_1.4.1_x64-setup.exe".into()],
+        )
+        .unwrap_err();
+        assert!(err_ver.to_string().contains("不一致"), "{}", err_ver);
+
+        // 2. Safety gate: must reject when referenced binary is NOT on remote release
+        let err_missing = sync_release_manifest_only_with_token(
+            "github",
+            &base,
+            &req,
+            "tok",
+            &["other.zip".into()],
+        )
+        .unwrap_err();
+        assert!(err_missing.to_string().contains("尚未存在于线上"), "{}", err_missing);
+
+        // 3. Valid sync on a draft release (via release_id 77): deletes ONLY old latest.json (802), keeps setup.exe (801), uploads new latest.json (803)
+        let asset = sync_release_manifest_only_with_token(
+            "github",
+            &base,
+            &req,
+            "tok",
+            &["App_1.4.1_x64-setup.exe".into(), "latest.json".into()],
+        )
+        .unwrap()
+        .expect("should return uploaded asset metadata");
+        assert_eq!(asset.id, "803");
+        assert_eq!(asset.name, "latest.json");
+        assert_eq!(asset.size, latest_len);
+
+        let _ = srv.join();
+        let log = events.lock().unwrap().clone();
+        assert_eq!(log, vec!["GET_RELEASE_77", "DELETE_LATEST_802", "UPLOAD_LATEST"]);
         let _ = std::fs::remove_dir_all(&base);
     }
 }
