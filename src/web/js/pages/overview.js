@@ -184,6 +184,10 @@ export function renderOverview(root, app, epoch) {
                 <option value="tag_push" ${defaultDeployGitMode === "tag_push" ? "selected" : ""}>打标 v${esc(versions.current)} 并推送远端</option>
                 <option value="commit_tag_push" ${defaultDeployGitMode === "commit_tag_push" ? "selected" : ""}>先提交改动 + 打标并推送</option>
               </select>
+              <select class="select" id="dpChannel" style="min-width:132px" title="本次免重编部署的发布通道（独立于下方一键构建通道，避免误推测试版）">
+                <option value="stable" ${String(versions.current || "").split("+")[0].includes("-") ? "" : "selected"}>正式版 (Stable)</option>
+                <option value="beta" ${String(versions.current || "").split("+")[0].includes("-") ? "selected" : ""}>测试版 (Beta)</option>
+              </select>
               <select class="select" id="dpReleaseMode" style="min-width:185px">
                 <option value="release" ${repoBound || !git.isRepo ? "selected" : ""}>${
                   repoBound
@@ -457,6 +461,7 @@ export function renderOverview(root, app, epoch) {
     "plRunBuild",
     "plGenManifest",
     "dpGitMode",
+    "dpChannel",
     "dpReleaseMode",
     "dpEnsureManifest",
     "dpForceStale",
@@ -539,9 +544,24 @@ export function renderOverview(root, app, epoch) {
 
   const plChannelEl = document.getElementById("plChannel");
   let plChannelUserTouched = false;
+  let plChannelTouchedVer = null;
   plChannelEl?.addEventListener("change", () => {
+    // 手动选择只对「当前这个目标版本」有效，换版本后必须重新跟随版本号，防止旧的 beta 选择残留把正式版推成测试版
     plChannelUserTouched = true;
+    plChannelTouchedVer = String(effectiveTargetVer || "");
   });
+  const channelRiskOk = async (ver, ch) => {
+    const pre = String(ver || "").split("+")[0].includes("-");
+    if (ch === "beta" && !pre) {
+      return confirmDialog({
+        title: "通道与版本号不一致",
+        message: `v${ver} 是正式版本号，但发布通道选了「测试版」。将作为预发布推送，正式版用户不会收到这次更新。`,
+        confirmText: "仍按测试版发布",
+        danger: true,
+      });
+    }
+    return true;
+  };
 
   const syncDeployNotesPreviewFromEditor = () => {
     if (!deployInfo || effectiveTargetVer !== versions.current) return;
@@ -620,7 +640,9 @@ export function renderOverview(root, app, epoch) {
   );
 
   const syncChannelForVersion = (ver, bumpKind) => {
-    if (!plChannelEl || plChannelUserTouched) return;
+    if (!plChannelEl) return;
+    if (plChannelUserTouched && plChannelTouchedVer === String(ver || "")) return;
+    plChannelUserTouched = false;
     const isPre = bumpKind === "beta" || String(ver || "").includes("-");
     plChannelEl.value = isPre ? "beta" : "stable";
   };
@@ -819,6 +841,11 @@ export function renderOverview(root, app, epoch) {
       }
 
       const targetVer = versions.current;
+      const isPreTarget = String(targetVer || "").split("+")[0].includes("-");
+      const dpChannel = isPreTarget
+        ? "beta"
+        : (document.getElementById("dpChannel")?.value || "stable");
+      if (uploadRelease && !(await channelRiskOk(targetVer, dpChannel))) return;
       // Strictly reuse #plNotes ONLY when the pipeline form targets the SAME `versions.current`
       // so notes drafted for a bumped next version (e.g. v1.47.2) NEVER leak into v1.47.1 deploy!
       const plNotesMatchesCurrentVer = effectiveTargetVer === targetVer;
@@ -828,9 +855,10 @@ export function renderOverview(root, app, epoch) {
           : document.getElementById("plNotes")?.value.trim() || "";
       const summaryLines = [
         `版本：v${targetVer}`,
+        `通道：${dpChannel === "beta" ? "预发布测试版 (Beta · 仅测试通道可见)" : "正式版 (Stable · 全员可收到更新)"}`,
         `成品：${(deployInfo?.artifactFiles || []).join("、")}`,
         `Git：${dpGitMode === "none" ? "不操作" : dpGitMode === "commit_tag_push" ? "提交改动 + 打标推送" : "打标并推送远端"}`,
-        `发布：${uploadRelease ? `${PROVIDER_LABELS[repoProv] || repoProv} (${repoSlug})${dpRelMode === "draft" ? " [草稿]" : ""}` : "仅推 Git，不上传"}`,
+        `发布：${uploadRelease ? `${PROVIDER_LABELS[repoProv] || repoProv} (${repoSlug})${dpRelMode === "draft" ? " [草稿 · 不会推送给用户]" : ""}` : "仅推 Git，不上传"}`,
       ];
       if (git.isRepo && git.aheadCount > 0 && dpGitMode === "none" && uploadRelease) {
         summaryLines.push(
@@ -849,7 +877,7 @@ export function renderOverview(root, app, epoch) {
         const pid = await API.deployExistingRelease({
           projectId: project.id,
           version: targetVer,
-          channel: targetVer.includes("-") ? "beta" : (document.getElementById("plChannel")?.value || "stable"),
+          channel: dpChannel,
           ensureManifest,
           verifyChecksums: true,
           gitMode: dpGitMode,
@@ -909,6 +937,7 @@ export function renderOverview(root, app, epoch) {
         return;
       }
 
+      if (!(await channelRiskOk(effectiveTargetVer, document.getElementById("plChannel").value))) return;
       const req = {
         projectId: project.id,
         bumpKind,

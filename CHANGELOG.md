@@ -1,5 +1,48 @@
 # ShipForge 变更记录
 
+## 1.5.2 (2026-11-27) —— 修复推送渠道误推测试版、客户端收不到更新与推送成功率稳定性
+
+- **彻底根治「正式版误推测试版」与多入口渠道错乱**（`version.rs`、`main.rs`、`packager.rs`、`repo_client.rs`、`overview.js`、`release.js`）：
+  - 引入唯一渠道裁决函数 `resolve_release_channel`，统一规范化所有构建、清单、一键流水线、免重编部署及手动上传入口的 `channel` / `prerelease` 判定；带预发布后缀的版本强制按测试版发布，避免污染正式版；正式版本号误选测试版时前端显式标红二次确认。
+  - 修复总览页「免重编立即部署推送」跨表单偷读下方折叠「一键构建」内 `#plChannel` 导致正式版成品被悄悄推成测试版的严重缺陷，为其配备独立 `#dpChannel` 选择器并在确认弹窗明示发布渠道；同步修复 `plChannelUserTouched` 切换版本后残留不重置的问题。
+  - 手动发布面板将 `Prerelease` 开关明确标注为「测试版 (Prerelease)」，并在上传确认弹窗展示当前发布渠道（正式版 / 测试版 / 草稿）及错配警示。
+- **彻底解决「已推送但软件端收不到更新」**（`repo_client.rs`）：
+  - **原子暂存发布**：新建公开 GitHub Release 时先以 Draft 暂存，待所有二进制、校验表与 `latest.json` 全部上传并校验体积后，一次性原子公开并显式写入 `make_latest`（避免上传中途半成品抢占 `releases/latest` 导致客户端 404）。
+  - **草稿识别与复用**：`GET /releases/tags/{tag}` 对草稿返回 404 时自动回退扫描 `/releases?per_page=30` 复用已有草稿，杜绝 422 冲突与重复 Release。
+  - **清单与通道强对齐 + 目标仓库校验**：发布前自动对齐 `latest.json` 的 `channel` 字段，并拦截 `installer.url` / `portable.url` 与当前目标 GitHub 仓库或标签不符的过期清单；编辑 Release（草稿转正 / 测试转正式）时自动维护 `make_latest`。
+  - **发布后回读核验与自愈**：上传完成后自动回读检查全部附件状态与体积、核验 `prerelease`/`draft` 标记及 `/releases/latest` 指向，异常自动修补或明确报错拦截。
+- **全面提升大文件与 Git 推送成功率**（`repo_client.rs`、`git_ops.rs`）：
+  - WinHTTP 请求层支持自动代理失败回退直连（`NO_PROXY`），回环地址始终直连；上传超时放宽至 300s 并采用 64 KB 流式分块；大文件重试放宽至 4 次（1s / 2.5s / 5s / 8s）并纳入 HTTP 408 / 409 / 422 / 429 / 5xx。
+  - **断连落盘免重传恢复**：当大文件传输在等待响应阶段遇到超时/断连（如 HTTP 408 / 连接重置），重试前自动核查远端资产列表，若已完整落盘（`state=uploaded` 且体积一致）直接复用成功结果，免去重复上传几十 MB。
+  - `git_push_with_log` 为分支推送、远端标签读取与标签分批推送新增瞬态网络/TLS/5xx 自动重试（绝不重试 non-fast-forward 或鉴权错误）。
+
+## 1.5.1 (2026-11-27) —— 全应用字体清晰度深度修复与官网交互动效 / 配色焕新
+
+- **全应用字体渲染与可读性深度修复**（`styles.css`、`updater.html`、`app.js`、`compile.js`、`release.js`、`version.js`、`preferences.js`、`health-report.js`）：
+  - 修复 `--font-mono`（及更新小窗 `--mono`）缺少中文字体回退导致所有 `.mono` 标签（如 `v1.x 成品就绪`）、日志与路径在 Windows 上退化为 1-bit 位图新宋体糊字的根因，前置加入 `"Microsoft YaHei UI"` / `"PingFang SC"` / `"Segoe UI"`。
+  - 移除 `html, body` 上抑制 Windows DirectWrite ClearType 亚像素渲染的 `-webkit-font-smoothing: antialiased` 与 `text-rendering: optimizeLegibility`，修正更新日志预览区引用未定义 `var(--font-ui)` 的缺陷。
+  - 全面拉高浅/深双主题次级文字与语义状态色对比度（`--text-2-light`、`--text-3-light`、`--ok-light`、`--warn-light`、`--accent-text-light` 等均达 WCAG AA 标准），并将所有 `.tag`、状态条、表格表头、终端栏及行内 `10.5px–11px` 小字统一提升至清晰可读字号（`12px` / `font-weight: 500`）。
+  - 在 `api.selftest.mjs` 中新增第 24 项字体清晰度契约门禁防止回退。
+- **官网全套动效交互升级与全新矿雾松青 + 锻造黄铜配色**（`website/`、`docs/assets/logo.svg`、`docs/assets/social-preview.png`）：
+  - 切换为全新北欧矿雾松青（`#0d766e` / `#2dd4bf`）与锻造黄铜（`#b45309` / `#f59e0b`）双色视觉体系，并同步刷新 Logo、Social Preview 与 6 张高清晰实机截图。
+  - 完整落地阅读进度条、滚动自适应收缩顶栏、Hero 3D 透视展开舞台、CSS Anchor Positioning 滑动标签下划线、双向渐进景深浮入动画、Story 04 错层视差副图、可切换工程指标条形图 + 缓动数字递增卡片、双向共享元素 View Transitions 浮动大图灯箱与赞赏弹窗。
+
+## 1.5.0 (2026-11-27) —— 全自动静默更新小窗、线上日志与 latest.json 联动同步、仓库切换至 Bireo/ShipForge
+
+- **一键全自动更新，彻底告别手动卸载与安装向导**（`updater_host.rs`、`updater.rs`、`main.rs`、`preferences.js`）：
+  - 点击「一键自动更新」后，主程序自动校验安全边界并退出，无缝切换为独立置顶的品牌进度小窗（`shipforge-updater.exe` 独立宿主与隔离 WebView2 目录，零文件锁冲突）。
+  - 安装版自动通过 NSIS `/S /UPDATE /D=<app_dir>` 执行静默就地升级（跳过旧版卸载确认与向导页），便携版改用纯 Rust 原子备份替换与异常自动回滚，不再依赖隐藏 PowerShell 脚本；完成后自动拉起新版并异步清理临时宿主目录。
+  - 若遇安装目录权限受限，弹窗内直接提供「管理员重试」「手动安装」与「打开原版本」兜底动作，绝不中断失联。
+- **融合 ShipForge 官方 Logo 的专属进度弹窗**（`src/web/updater.html`）：
+  - 以 ShipForge 等距锻造立方体 Logo 为视觉中心：外圈采用语义化 `<progress>` 圆环进度光晕，内置动态旋转蓝图构造环、悬浮脉动熔铸琥珀核心与微抬精密顶盖动效，配合 4 步进度轨道（下载 · 校验 · 安装 · 启动）与浅/深双色自适应主题。
+  - 新增 `--preview-updater` 预览模式与端到端单元测试覆盖。
+- **线上 Release 说明与 `latest.json` 一键联动同步**（`repo_client.rs`、`packager.rs`、`main.rs`、`release.js`、`version.js`）：
+  - 在「产物与仓库 → 线上发行版」编辑面板新增「同步覆盖线上 latest.json」开关，保存 Release 说明时可选仅覆盖更新本地与线上 `latest.json`（不重传安装包/便携包，强制版本一致性与公网 URL / SHA-256 / 远端产物存在性安全门禁，支持 GitHub 含草稿 / Gitee / Gitea / GitLab）。
+  - 在「版本与源码 → 变更日志」撰写与阅读视图新增「同步线上日志」一键按钮，写入变更记录时自动同步本地同版本 `latest.json`。
+- **修复 Git 更新日志草拟器被 `docs:` 提交劫持的 Bug**（`git_ops.rs`、`main.rs`、`version.js`）：
+  - 当区间内存在 `pre-build` 快照或工作区源码/引擎改动且仅有 `docs:`/`chore:` 类提交时，优先在「更新内容」顶部列出源码与子引擎改动
+…
+
 ## 1.5.1 (2026-11-27) —— 全应用字体清晰度深度修复与官网交互动效 / 配色焕新
 
 - **全应用字体渲染与可读性深度修复**（`styles.css`、`updater.html`、`app.js`、`compile.js`、`release.js`、`version.js`、`preferences.js`、`health-report.js`）：

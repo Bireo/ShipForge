@@ -1319,6 +1319,118 @@ pub fn git_push(root: &Path, push_tags: bool) -> Result<String> {
     git_push_with_log(root, push_tags, |_, _, _| {})
 }
 
+/// 判断 Git 远端操作失败是否属于可重试的瞬态网络/TLS/5xx 错误（绝不重试权限、冲突或 non-fast-forward）。
+pub fn is_transient_git_net_error(msg: &str) -> bool {
+    let low = msg.to_ascii_lowercase();
+    if low.contains("non-fast-forward")
+        || low.contains("[rejected]")
+        || low.contains("fetch first")
+        || low.contains("authentication failed")
+        || low.contains("permission denied")
+        || low.contains("could not read username")
+        || low.contains("repository not found")
+        || low.contains("403")
+        || low.contains("401")
+    {
+        return false;
+    }
+    low.contains("connection was reset")
+        || low.contains("connection reset")
+        || low.contains("recv failure")
+        || low.contains("failed to connect")
+        || low.contains("could not connect")
+        || low.contains("timed out")
+        || low.contains("timeout")
+        || low.contains("ssl_read")
+        || low.contains("schannel")
+        || low.contains("openssl")
+        || low.contains("eof")
+        || low.contains("rpc failed")
+        || low.contains("http 500")
+        || low.contains("http 502")
+        || low.contains("http 503")
+        || low.contains("http 504")
+        || low.contains("returned error: 500")
+        || low.contains("returned error: 502")
+        || low.contains("returned error: 503")
+        || low.contains("returned error: 504")
+        || low.contains("returned error: 429")
+        || low.contains("could not resolve host")
+        || low.contains("unable to access")
+}
+
+fn run_git_combined_net_retry<F>(root: &Path, args: &[&str], label: &str, on_event: &mut F) -> Result<String>
+where
+    F: FnMut(u8, &str, &str),
+{
+    const BACKOFFS_MS: [u64; 3] = [1200, 3000, 6000];
+    let mut last_err = None;
+    for attempt in 0..=BACKOFFS_MS.len() {
+        if attempt > 0 {
+            on_event(
+                22,
+                "网络重试",
+                &format!(
+                    "⚠ {} 遇到网络波动，{:.1}s 后第 {}/{} 次重试…",
+                    label,
+                    BACKOFFS_MS[attempt - 1] as f64 / 1000.0,
+                    attempt,
+                    BACKOFFS_MS.len()
+                ),
+            );
+            std::thread::sleep(std::time::Duration::from_millis(BACKOFFS_MS[attempt - 1]));
+        }
+        match run_git_combined(root, args) {
+            Ok(out) => return Ok(out),
+            Err(e) => {
+                let msg = e.to_string();
+                let retryable = is_transient_git_net_error(&msg);
+                last_err = Some(e);
+                if !retryable || attempt == BACKOFFS_MS.len() {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("{} 失败", label)))
+}
+
+fn run_git_net_retry<F>(root: &Path, args: &[&str], label: &str, on_event: &mut F) -> Result<String>
+where
+    F: FnMut(u8, &str, &str),
+{
+    const BACKOFFS_MS: [u64; 3] = [1200, 3000, 6000];
+    let mut last_err = None;
+    for attempt in 0..=BACKOFFS_MS.len() {
+        if attempt > 0 {
+            on_event(
+                58,
+                "网络重试",
+                &format!(
+                    "⚠ {} 遇到网络波动，{:.1}s 后第 {}/{} 次重试…",
+                    label,
+                    BACKOFFS_MS[attempt - 1] as f64 / 1000.0,
+                    attempt,
+                    BACKOFFS_MS.len()
+                ),
+            );
+            std::thread::sleep(std::time::Duration::from_millis(BACKOFFS_MS[attempt - 1]));
+        }
+        match run_git(root, args) {
+            Ok(out) => return Ok(out),
+            Err(e) => {
+                let msg = e.to_string();
+                let retryable = is_transient_git_net_error(&msg);
+                last_err = Some(e);
+                if !retryable || attempt == BACKOFFS_MS.len() {
+                    break;
+                }
+            }
+        }
+    }
+    Err(last_err.unwrap_or_else(|| anyhow!("{} 失败", label)))
+}
+
 /// Pushes current branch (and optionally only *unpushed* local tags) with structured progress + log callback.
 /// Avoids false `! [rejected] <tag> (already exists)` failures when remote already holds existing release tags.
 pub fn git_push_with_log<F>(root: &Path, push_tags: bool, mut on_event: F) -> Result<String>
@@ -1344,7 +1456,7 @@ where
         &format!("▶ 开始推送分支 `{}` 到远端 `{}`…", branch, target_remote),
     );
 
-    let branch_out = match run_git_combined(root, &["push"]) {
+    let branch_out = match run_git_combined_net_retry(root, &["push"], "推送分支", &mut on_event) {
         Ok(s) => s,
         Err(e) => {
             let msg = e.to_string().to_ascii_lowercase();
@@ -1354,7 +1466,12 @@ where
                     "绑定上游并推送",
                     &format!("检测到分支 `{}` 尚未绑定上游，执行 git push -u {} HEAD…", branch, target_remote),
                 );
-                run_git_combined(root, &["push", "-u", &target_remote, "HEAD"])?
+                run_git_combined_net_retry(
+                    root,
+                    &["push", "-u", &target_remote, "HEAD"],
+                    "绑定上游并推送",
+                    &mut on_event,
+                )?
             } else {
                 on_event(100, "推送失败", &format!("✗ {}", e));
                 return Err(e);
@@ -1385,7 +1502,12 @@ where
         "核对远端标签",
         &format!("▶ 正在对比本地与远端 `{}` 标签清单，跳过已存在标签以避免冲突…", target_remote),
     );
-    let ls_out = run_git(root, &["ls-remote", "--tags", &target_remote])?;
+    let ls_out = run_git_net_retry(
+        root,
+        &["ls-remote", "--tags", &target_remote],
+        "读取远端标签列表",
+        &mut on_event,
+    )?;
     let remote_tags = parse_remote_tag_names(&ls_out);
     let local_tags: Vec<String> = run_git(root, &["tag", "--list"])?
         .lines()
@@ -1430,7 +1552,7 @@ where
             owned_args.push(format!("refs/tags/{}", t));
         }
         let arg_refs: Vec<&str> = owned_args.iter().map(|s| s.as_str()).collect();
-        let out = match run_git_combined(root, &arg_refs) {
+        let out = match run_git_combined_net_retry(root, &arg_refs, "推送标签", &mut on_event) {
             Ok(s) => s,
             Err(e) => {
                 on_event(100, "推送标签失败", &format!("✗ {}", e));
@@ -2164,5 +2286,18 @@ mod tests {
         assert!(formatted.contains("(+420 / -110 行)") || formatted.contains("（+420 / -110 行）"), "{}", formatted);
 
         let _ = fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_is_transient_git_net_error_classifies_safely() {
+        assert!(is_transient_git_net_error("fatal: unable to access 'https://github.com/a/b.git/': Recv failure: Connection was reset"));
+        assert!(is_transient_git_net_error("fatal: unable to access 'https://github.com/a/b.git/': Failed to connect to github.com port 443: Timed out"));
+        assert!(is_transient_git_net_error("error: RPC failed; HTTP 502 curl 22 The requested URL returned error: 502"));
+        assert!(is_transient_git_net_error("schannel: failed to receive handshake, SSL/TLS connection failed"));
+
+        assert!(!is_transient_git_net_error("! [rejected] main -> main (non-fast-forward)"));
+        assert!(!is_transient_git_net_error("remote: Invalid username or password. fatal: Authentication failed"));
+        assert!(!is_transient_git_net_error("fatal: repository 'https://github.com/a/b.git/' not found (403)"));
+        assert!(!is_transient_git_net_error("Permission denied (publickey)."));
     }
 }

@@ -115,6 +115,26 @@ impl Drop for WinHttpHandle {
 /// Native Windows WinHTTP streaming request supporting:
 /// - System proxy / TLS 1.2+ / Windows Root Certificate Store
 /// - Fixed-size 64 KiB streaming body upload with byte-level progress callback
+fn is_loopback_host(host: &str) -> bool {
+    let h = host.trim().trim_matches(['[', ']']);
+    h.eq_ignore_ascii_case("localhost") || h == "127.0.0.1" || h == "::1"
+}
+
+fn is_retryable_http_status(status: u16) -> bool {
+    status == 408 || status == 409 || status == 429 || status >= 500
+}
+
+fn asset_retry_backoffs(api_root: &str) -> &'static [u64] {
+    if parse_http_url(api_root)
+        .map(|p| is_loopback_host(&p.host))
+        .unwrap_or(false)
+    {
+        &[50, 100, 200]
+    } else {
+        &[1000, 2500, 5000, 8000]
+    }
+}
+
 /// - Zero OpenSSL or external CLI dependency
 #[cfg(windows)]
 pub fn winhttp_request<F>(
@@ -122,6 +142,37 @@ pub fn winhttp_request<F>(
     url: &str,
     headers: &[(&str, String)],
     body_reader: Option<(&mut dyn Read, u64)>,
+    on_progress: F,
+) -> Result<HttpResponse>
+where
+    F: FnMut(u64, u64),
+{
+    let parsed = parse_http_url(url)?;
+    if is_loopback_host(&parsed.host) {
+        return winhttp_request_with_proxy(method, url, headers, body_reader, false, on_progress);
+    }
+    if body_reader.is_none() {
+        let mut cb = on_progress;
+        match winhttp_request_with_proxy(method, url, headers, None, true, |d, t| cb(d, t)) {
+            Ok(resp) => Ok(resp),
+            Err(proxy_err) => {
+                // 系统代理 / WPAD 故障时自动回退直连，大幅提升 API 请求成功率
+                winhttp_request_with_proxy(method, url, headers, None, false, |d, t| cb(d, t))
+                    .map_err(|direct_err| anyhow!("{}（自动代理模式：{}）", direct_err, proxy_err))
+            }
+        }
+    } else {
+        winhttp_request_with_proxy(method, url, headers, body_reader, true, on_progress)
+    }
+}
+
+#[cfg(windows)]
+fn winhttp_request_with_proxy<F>(
+    method: &str,
+    url: &str,
+    headers: &[(&str, String)],
+    body_reader: Option<(&mut dyn Read, u64)>,
+    use_auto_proxy: bool,
     mut on_progress: F,
 ) -> Result<HttpResponse>
 where
@@ -131,10 +182,15 @@ where
 
     let parsed = parse_http_url(url)?;
     let ua = to_wide("ShipForge/2.0 (Windows; WinHTTP)");
+    let access_type = if use_auto_proxy && !is_loopback_host(&parsed.host) {
+        WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY
+    } else {
+        WINHTTP_ACCESS_TYPE_NO_PROXY
+    };
     let session = WinHttpHandle(unsafe {
         WinHttpOpen(
             ua.as_ptr(),
-            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
+            access_type,
             std::ptr::null(),
             std::ptr::null(),
             0,
@@ -144,10 +200,10 @@ where
         return Err(anyhow!("初始化 WinHTTP 会话失败"));
     }
 
-    // Generous safe timeouts: resolve 15s, connect 30s, send 180s, receive 180s (for 25MB+ Release uploads)
+    // Generous safe timeouts: resolve 20s, connect 30s, send 300s, receive 300s (for 30MB+ Release uploads)
     // Also explicitly enable TLS 1.2 + 1.3 (fallback to TLS 1.2 on older Windows)
     unsafe {
-        WinHttpSetTimeouts(session.0, 15_000, 30_000, 180_000, 180_000);
+        WinHttpSetTimeouts(session.0, 20_000, 30_000, 300_000, 300_000);
         const TLS12: u32 = 0x0000_0800;
         const TLS13: u32 = 0x0000_2000;
         let mut protos: u32 = TLS12 | TLS13;
@@ -242,7 +298,7 @@ where
     }
 
     if let Some((reader, total)) = body_reader {
-        let mut buf = vec![0u8; 256 * 1024];
+        let mut buf = vec![0u8; 64 * 1024];
         let mut written_total: u64 = 0;
         while written_total < total {
             let max_read = ((total - written_total) as usize).min(buf.len());
@@ -371,6 +427,21 @@ where
     Err(anyhow!("WinHTTP 仅支持 Windows 平台"))
 }
 
+#[cfg(not(windows))]
+fn winhttp_request_with_proxy<F>(
+    _method: &str,
+    _url: &str,
+    _headers: &[(&str, String)],
+    _body_reader: Option<(&mut dyn Read, u64)>,
+    _use_auto_proxy: bool,
+    _on_progress: F,
+) -> Result<HttpResponse>
+where
+    F: FnMut(u64, u64),
+{
+    Err(anyhow!("WinHTTP 仅支持 Windows 平台"))
+}
+
 fn http_json_with_retry(
     method: &str,
     url: &str,
@@ -384,15 +455,16 @@ fn http_json_with_retry(
         if attempt > 0 {
             std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
         }
+        let use_auto_proxy = attempt % 2 == 0;
         let mut slice_ref = bytes_opt.as_deref();
         let reader_arg = slice_ref.as_mut().map(|s| {
             let len = s.len() as u64;
             (s as &mut dyn Read, len)
         });
-        match winhttp_request(method, url, headers, reader_arg, |_, _| {}) {
+        match winhttp_request_with_proxy(method, url, headers, reader_arg, use_auto_proxy, |_, _| {}) {
             Ok(resp) => {
-                // Retry only on transient 5xx / 429
-                if (resp.status >= 500 || resp.status == 429) && attempt < NET_RETRY_BACKOFF_MS.len()
+                // Retry only on transient 408 / 409 / 429 / 5xx
+                if is_retryable_http_status(resp.status) && attempt < NET_RETRY_BACKOFF_MS.len()
                 {
                     last_err = Some(anyhow!("远端暂不可用 (HTTP {})", resp.status));
                     continue;
@@ -810,12 +882,22 @@ fn update_release_multi_with_token(
     let resp = match prov {
         "github" => {
             let rid = resolve_release_id_if_missing(prov, &root, token, &clean_repo, &req.tag_name, &req.release_id)?;
+            let make_latest = resolve_github_make_latest(
+                &root,
+                &headers,
+                token,
+                &clean_repo,
+                req.tag_name.trim(),
+                req.draft,
+                req.prerelease,
+            );
             let url = format!("{}/repos/{}/releases/{}", root, clean_repo, rid);
             let body = serde_json::json!({
                 "name": req.title.trim(),
                 "body": req.notes.trim(),
                 "draft": req.draft,
                 "prerelease": req.prerelease,
+                "make_latest": make_latest,
             });
             http_json_with_retry("PATCH", &url, &headers, Some(&body), token)?
         }
@@ -1506,6 +1588,182 @@ pub fn upload_order_rank(file_name: &str) -> u8 {
 }
 
 /// Publish a Release + stream-upload all selected artifacts to GitHub, Gitee, GitLab, or Gitea.
+/// 发布前把 `latest.json` 的 `channel` 与本次发布的预发布标记对齐，
+/// 杜绝「清单写 stable、Release 却是预发布」（或反过来）导致软件端取错通道。
+fn align_manifest_channel(release_dir: &Path, req: &MultiPublishRequest) -> Result<()> {
+    if !req.files.iter().any(|f| {
+        Path::new(f)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.eq_ignore_ascii_case("latest.json"))
+    }) {
+        return Ok(());
+    }
+    let Ok(path) = crate::guardrails::resolve_confined_path(release_dir, "latest.json") else {
+        return Ok(());
+    };
+    let Ok(raw) = std::fs::read_to_string(&path) else {
+        return Ok(());
+    };
+    let Ok(mut doc) = serde_json::from_str::<Value>(raw.trim_start_matches('\u{feff}')) else {
+        return Ok(());
+    };
+    let expected = if req.prerelease { "beta" } else { "stable" };
+    let current = doc.get("channel").and_then(|c| c.as_str()).unwrap_or("");
+    if current == expected {
+        return Ok(());
+    }
+    if let Some(obj) = doc.as_object_mut() {
+        obj.insert("channel".into(), Value::String(expected.into()));
+        let text = serde_json::to_string_pretty(&doc)?;
+        std::fs::write(&path, text).map_err(|e| anyhow!("对齐 latest.json 通道失败：{}", e))?;
+    }
+    Ok(())
+}
+
+/// 发布后回读核验并自动修复（仅 GitHub）：附件齐全、预发布/草稿标记正确、
+/// 正式版确实成为「最新正式版」，保证软件端 `releases/latest` 能收到本次更新。
+fn verify_and_repair_github_release<F>(
+    api_root: &str,
+    headers: &[(&'static str, String)],
+    token: &str,
+    repo: &str,
+    tag: &str,
+    req: &MultiPublishRequest,
+    files: &[(String, std::path::PathBuf, u64)],
+    on_progress: &mut F,
+) -> Result<()>
+where
+    F: FnMut(u8, &str),
+{
+    on_progress(98, "发布后核验：回读 Release 状态与附件…");
+    let get_url = format!("{}/repos/{}/releases/tags/{}", api_root, repo, encode_uri_component(tag));
+    let mut rel = Value::Null;
+    let mut last_problem = String::new();
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+        let resp = http_json_with_retry("GET", &get_url, headers, None, token)?;
+        if resp.status != 200 {
+            last_problem = format!("回读 Release 失败 (HTTP {})", resp.status);
+            continue;
+        }
+        let j = resp.json()?;
+        let assets = j
+            .get("assets")
+            .and_then(|a| a.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let mut problems: Vec<String> = Vec::new();
+        for (fname, _, size) in files {
+            match assets
+                .iter()
+                .find(|a| a.get("name").and_then(|n| n.as_str()) == Some(fname.as_str()))
+            {
+                None => problems.push(format!("附件 {} 未出现在 Release 中", fname)),
+                Some(a) => {
+                    if let Some(st) = a.get("state").and_then(|s| s.as_str()) {
+                        if st != "uploaded" {
+                            problems.push(format!("附件 {} 状态为 {}", fname, st));
+                        }
+                    }
+                    if let Some(sz) = a.get("size").and_then(|s| s.as_u64()) {
+                        if sz != *size {
+                            problems.push(format!("附件 {} 体积 {} B 与本地 {} B 不一致", fname, sz, size));
+                        }
+                    }
+                }
+            }
+        }
+        if problems.is_empty() {
+            rel = j;
+            last_problem.clear();
+            break;
+        }
+        last_problem = problems.join("；");
+    }
+    if !last_problem.is_empty() {
+        return Err(anyhow!(
+            "发布后核验失败：{}（软件端可能收不到更新，请重新发布）",
+            last_problem
+        ));
+    }
+
+    // 预发布 / 草稿标记必须与裁决一致，不一致自动修正
+    if let Some(rid) = rel.get("id").and_then(|v| v.as_u64()) {
+        let pre_bad = rel.get("prerelease").and_then(|v| v.as_bool()).is_some_and(|p| p != req.prerelease);
+        let draft_bad = rel.get("draft").and_then(|v| v.as_bool()).is_some_and(|d| d != req.draft);
+        if pre_bad || draft_bad {
+            on_progress(98, "发布标记与预期不符，自动修正…");
+            let patch_url = format!("{}/repos/{}/releases/{}", api_root, repo, rid);
+            let body = serde_json::json!({ "prerelease": req.prerelease, "draft": req.draft });
+            let patched = http_json_with_retry("PATCH", &patch_url, headers, Some(&body), token)?;
+            if patched.status >= 300 {
+                return Err(anyhow!("修正发布标记失败 (HTTP {})", patched.status));
+            }
+        }
+    }
+    if req.draft {
+        on_progress(99, "已按草稿保存：发布前软件端不会收到");
+        return Ok(());
+    }
+    if req.prerelease {
+        on_progress(99, "✓ 已核验：本次为预发布（测试版），仅测试版通道会收到");
+        return Ok(());
+    }
+
+    // 正式版：GitHub「最新正式版」(releases/latest) 必须指向本次，否则软件端收不到
+    let latest_url = format!("{}/repos/{}/releases/latest", api_root, repo);
+    let mut repaired = false;
+    let mut seen_latest = String::from("（无）");
+    for attempt in 0..3 {
+        if attempt > 0 {
+            std::thread::sleep(Duration::from_millis(1500));
+        }
+        let resp = http_json_with_retry("GET", &latest_url, headers, None, token)?;
+        let latest_tag = if resp.status == 200 {
+            resp.json()
+                .ok()
+                .and_then(|j| j.get("tag_name").and_then(|t| t.as_str()).map(|s| s.to_string()))
+        } else {
+            None
+        };
+        if latest_tag.as_deref() == Some(tag) {
+            on_progress(99, "✓ 已核验：正式版用户将收到本次发布");
+            return Ok(());
+        }
+        if let Some(lt) = &latest_tag {
+            seen_latest = lt.clone();
+            let newer_exists = matches!(
+                crate::version::compare_semver_str(tag.trim_start_matches(['v', 'V']), lt.trim_start_matches(['v', 'V'])),
+                Some(std::cmp::Ordering::Less)
+            );
+            if newer_exists {
+                on_progress(
+                    99,
+                    &format!("⚠ 仓库「最新正式版」是更高版本 {}，本次 {} 属旧版本发布，正式版用户不会自动收到", lt, tag),
+                );
+                return Ok(());
+            }
+        }
+        if !repaired {
+            repaired = true;
+            if let Some(rid) = rel.get("id").and_then(|v| v.as_u64()) {
+                on_progress(99, &format!("「最新正式版」仍是 {}，自动设为最新…", seen_latest));
+                let patch_url = format!("{}/repos/{}/releases/{}", api_root, repo, rid);
+                let body = serde_json::json!({ "make_latest": "true" });
+                let _ = http_json_with_retry("PATCH", &patch_url, headers, Some(&body), token);
+            }
+        }
+    }
+    Err(anyhow!(
+        "发布后核验失败：GitHub「最新正式版」仍是 {}，未指向 {}，正式版用户将收不到更新",
+        seen_latest,
+        tag
+    ))
+}
+
 pub fn publish_release_multi<F>(
     release_dir: &Path,
     req: &MultiPublishRequest,
@@ -1522,6 +1780,8 @@ where
     if req.files.is_empty() {
         return Err(anyhow!("请至少选择一个要上传的产物文件"));
     }
+
+    align_manifest_channel(release_dir, req)?;
 
     let mut file_entries: Vec<(String, std::path::PathBuf, u64)> = Vec::new();
     let mut clean_file_names: Vec<String> = Vec::new();
@@ -1557,6 +1817,7 @@ where
 
     // Safety gate: block localhost/127.0.0.1 leakage, size drift & stale SHA-256 in latest.json / SHA256SUMS.txt
     validate_manifest_for_publish(release_dir, tag, &clean_file_names)?;
+    validate_github_manifest_target(release_dir, &prov, &clean_repo, tag, &clean_file_names)?;
 
     let (token, _) = resolve_token(&prov, &req.base_url, &req.credential_id)?;
     let root = provider_api_root(&prov, &req.base_url)?;
@@ -1569,6 +1830,135 @@ where
         "gitea" => publish_gitea(&root, &token, &clean_repo, tag, req, &file_entries, &mut on_progress),
         _ => Err(anyhow!("暂不支持的仓库平台：{}", prov)),
     }
+}
+
+/// 发布至 GitHub 前校验 `latest.json` 内的下载地址是否指向当前目标仓库与当前标签，
+/// 防止仓库改名、切换仓库或沿用旧清单导致软件端校验拦截（收不到更新）。
+fn validate_github_manifest_target(
+    release_dir: &Path,
+    prov: &str,
+    clean_repo: &str,
+    tag: &str,
+    selected_files: &[String],
+) -> Result<()> {
+    if prov != "github" {
+        return Ok(());
+    }
+    let has_latest = selected_files
+        .iter()
+        .any(|f| f.eq_ignore_ascii_case("latest.json"));
+    if !has_latest {
+        return Ok(());
+    }
+    let path = crate::guardrails::resolve_confined_path(release_dir, "latest.json")?;
+    let raw = std::fs::read_to_string(&path)?;
+    let doc: Value = serde_json::from_str(raw.trim_start_matches('\u{feff}'))?;
+    let expected_prefix = format!(
+        "https://github.com/{}/releases/download/{}/",
+        clean_repo.to_ascii_lowercase(),
+        tag.to_ascii_lowercase()
+    );
+    for (label, section) in [("installer", doc.get("installer")), ("portable", doc.get("portable"))] {
+        let Some(url) = section
+            .and_then(|s| s.get("url"))
+            .and_then(|u| u.as_str())
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+        else {
+            continue;
+        };
+        let low = url.to_ascii_lowercase();
+        if low.starts_with("https://github.com/") && !low.starts_with(&expected_prefix) {
+            return Err(anyhow!(
+                "安全拦截：latest.json 中的 {} 下载地址 ({}) 与本次目标仓库/标签 ({} / {}) 不一致，软件端将拒绝或无法下载更新；请先重新生成更新清单",
+                label,
+                url,
+                clean_repo,
+                tag
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// 计算 GitHub Release 的 `make_latest` 字段：
+/// - 草稿或预发布一律 `"false"`，绝不污染正式版最新指针；
+/// - 正式版若仓库已存在更高正式版本号，传 `"legacy"` 防止历史补发降级最新正式版；否则传 `"true"` 确保软件端立即可见。
+fn resolve_github_make_latest(
+    api_root: &str,
+    headers: &[(&str, String)],
+    token: &str,
+    repo: &str,
+    tag: &str,
+    draft: bool,
+    prerelease: bool,
+) -> &'static str {
+    if draft || prerelease {
+        return "false";
+    }
+    let latest_url = format!("{}/repos/{}/releases/latest", api_root, repo);
+    if let Ok(resp) = http_json_with_retry("GET", &latest_url, headers, None, token) {
+        if resp.status == 200 {
+            if let Ok(j) = resp.json() {
+                if let Some(lt) = j.get("tag_name").and_then(|v| v.as_str()) {
+                    let cur_v = tag.trim().trim_start_matches(['v', 'V']);
+                    let lat_v = lt.trim().trim_start_matches(['v', 'V']);
+                    if matches!(
+                        crate::version::compare_semver_str(cur_v, lat_v),
+                        Some(std::cmp::Ordering::Less)
+                    ) {
+                        return "legacy";
+                    }
+                }
+            }
+        }
+    }
+    "true"
+}
+
+/// 按标签查找已有 GitHub Release（同时覆盖已公开版本与草稿版本）：
+/// GitHub 的 `/releases/tags/{tag}` 对草稿一律返回 404，必须回退扫描 `/releases?per_page=30`，
+/// 避免断点重试或覆盖草稿时触发 HTTP 422 或产生重复 Release。
+fn find_github_release_by_tag_including_drafts(
+    api_root: &str,
+    headers: &[(&str, String)],
+    token: &str,
+    repo: &str,
+    tag: &str,
+) -> Result<Option<Value>> {
+    let get_url = format!(
+        "{}/repos/{}/releases/tags/{}",
+        api_root,
+        repo,
+        encode_uri_component(tag)
+    );
+    let existing = http_json_with_retry("GET", &get_url, headers, None, token)?;
+    if existing.status == 200 {
+        return Ok(Some(existing.json()?));
+    }
+    if existing.status != 404 {
+        return Err(anyhow!(
+            "查询 GitHub Release {} 状态失败 (HTTP {})：{}",
+            tag,
+            existing.status,
+            scrub_secret(&existing.text(), token)
+        ));
+    }
+    // 404 可能是尚未创建，也可能是存在同名 Draft 草稿
+    let list_url = format!("{}/repos/{}/releases?per_page=30", api_root, repo);
+    if let Ok(list_resp) = http_json_with_retry("GET", &list_url, headers, None, token) {
+        if list_resp.status == 200 {
+            if let Ok(Value::Array(arr)) = list_resp.json() {
+                if let Some(found) = arr
+                    .into_iter()
+                    .find(|item| item.get("tag_name").and_then(|t| t.as_str()) == Some(tag))
+                {
+                    return Ok(Some(found));
+                }
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn delete_github_asset_by_name(
@@ -1595,6 +1985,52 @@ fn delete_github_asset_by_name(
             }
         }
     }
+}
+
+/// 重试上传前核查远端同名资产：
+/// - 若远端已存在 `state == "uploaded"` 且体积完全匹配的同名资产（常见于大文件刚传完但响应连接被代理断开），直接返回 `true` 复用成功结果，免去重复上传几十 MB；
+/// - 否则清理所有残片/starter/体积不符的同名资产并返回 `false` 继续重传。
+fn check_or_cleanup_github_asset(
+    api_root: &str,
+    headers: &[(&str, String)],
+    token: &str,
+    repo: &str,
+    rel_id: u64,
+    fname: &str,
+    expected_size: u64,
+) -> bool {
+    let list_url = format!("{}/repos/{}/releases/{}/assets?per_page=100", api_root, repo, rel_id);
+    if let Ok(resp) = http_json_with_retry("GET", &list_url, headers, None, token) {
+        if resp.status == 200 {
+            if let Ok(Value::Array(arr)) = resp.json() {
+                let mut verified_found = false;
+                let mut to_delete: Vec<u64> = Vec::new();
+                for a in arr {
+                    let aname = a.get("name").and_then(|n| n.as_str()).unwrap_or("");
+                    if aname != fname {
+                        continue;
+                    }
+                    let state = a.get("state").and_then(|s| s.as_str()).unwrap_or("");
+                    let size = a.get("size").and_then(|s| s.as_u64()).unwrap_or(0);
+                    let aid = a.get("id").and_then(|x| x.as_u64());
+                    if !verified_found
+                        && state.eq_ignore_ascii_case("uploaded")
+                        && size == expected_size
+                    {
+                        verified_found = true;
+                    } else if let Some(id) = aid {
+                        to_delete.push(id);
+                    }
+                }
+                for aid in to_delete {
+                    let del_url = format!("{}/repos/{}/releases/assets/{}", api_root, repo, aid);
+                    let _ = http_json_with_retry("DELETE", &del_url, headers, None, token);
+                }
+                return verified_found;
+            }
+        }
+    }
+    false
 }
 
 fn verify_uploaded_asset_response(fname: &str, expected_size: u64, resp: &HttpResponse) -> Result<()> {
@@ -1638,26 +2074,49 @@ where
     let mut headers = auth_headers("github", token);
     headers.push(("Content-Type", "application/json".into()));
 
-    // 1. Check if release already exists for tag
-    let get_url = format!("{}/repos/{}/releases/tags/{}", api_root, repo, encode_uri_component(tag));
-    let existing = http_json_with_retry("GET", &get_url, &headers, None, token)?;
+    // 1. Check if release already exists for tag (including existing Drafts)
+    let existing_opt = find_github_release_by_tag_including_drafts(api_root, &headers, token, repo, tag)?;
+    let make_latest = resolve_github_make_latest(
+        api_root,
+        &headers,
+        token,
+        repo,
+        tag,
+        req.draft,
+        req.prerelease,
+    );
     let mut existing_asset_ids: std::collections::HashMap<String, Vec<u64>> = std::collections::HashMap::new();
-    let release_json = if existing.status == 200 {
-        if !req.overwrite_assets {
+    let mut staged_as_draft = false;
+    let release_json = if let Some(rel) = existing_opt {
+        let was_draft = rel.get("draft").and_then(|v| v.as_bool()).unwrap_or(false);
+        if !req.overwrite_assets && !was_draft {
             return Err(anyhow!(
                 "GitHub Release {} 已存在；如需覆盖资产请勾选「覆盖同名资产」",
                 tag
             ));
         }
-        let rel = existing.json()?;
         let rel_id = rel["id"].as_u64().ok_or_else(|| anyhow!("无法读取 Release ID"))?;
+        // 如果已有 Release 本身是草稿且本次要正式公开，则先保持草稿状态把全部资产上传校验完，再原子转正！
+        if was_draft && !req.draft {
+            staged_as_draft = true;
+        }
         let patch_url = format!("{}/repos/{}/releases/{}", api_root, repo, rel_id);
-        let body = serde_json::json!({
-            "name": req.title.trim(),
-            "body": req.notes.trim(),
-            "draft": req.draft,
-            "prerelease": req.prerelease,
-        });
+        let body = if staged_as_draft {
+            serde_json::json!({
+                "name": req.title.trim(),
+                "body": req.notes.trim(),
+                "draft": true,
+                "prerelease": req.prerelease,
+            })
+        } else {
+            serde_json::json!({
+                "name": req.title.trim(),
+                "body": req.notes.trim(),
+                "draft": req.draft,
+                "prerelease": req.prerelease,
+                "make_latest": make_latest,
+            })
+        };
         let patched = http_json_with_retry("PATCH", &patch_url, &headers, Some(&body), token)?;
         if patched.status >= 300 {
             return Err(anyhow!("更新 GitHub Release 失败 (HTTP {})", patched.status));
@@ -1676,12 +2135,15 @@ where
         }
         patched.json()?
     } else {
+        // 原子发布保护：新建公开发布时先以 Draft 暂存，待所有二进制与 latest.json 全部上传校验后再一次性公开，
+        // 彻底避免半成品/空资产 Release 抢占 releases/latest 导致软件端收不到更新或 404！
+        staged_as_draft = !req.draft;
         let create_url = format!("{}/repos/{}/releases", api_root, repo);
         let body = serde_json::json!({
             "tag_name": tag,
             "name": req.title.trim(),
             "body": req.notes.trim(),
-            "draft": req.draft,
+            "draft": true,
             "prerelease": req.prerelease,
         });
         let created = http_json_with_retry("POST", &create_url, &headers, Some(&body), token)?;
@@ -1705,12 +2167,13 @@ where
         return Err(anyhow!("GitHub 未返回 upload_url"));
     }
 
-    let html_url = release_json
+    let mut html_url = release_json
         .get("html_url")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string())
         .unwrap_or_else(|| format!("https://github.com/{}/releases/tag/{}", repo, tag));
 
+    let backoffs = asset_retry_backoffs(api_root);
     let total_files = files.len().max(1);
     for (idx, (fname, path, size)) in files.iter().enumerate() {
         // Delete colliding old asset for THIS file only right before uploading its replacement
@@ -1724,28 +2187,34 @@ where
         let mut up_headers = auth_headers("github", token);
         up_headers.push(("Content-Type", "application/octet-stream".into()));
 
-        let base_pct = 15 + (idx * 80) / total_files;
-        let span_pct = (80 / total_files).max(1);
+        let base_pct = 15 + (idx * 78) / total_files;
+        let span_pct = (78 / total_files).max(1);
         on_progress(base_pct as u8, &format!("上传 [{}/{}] {}…", idx + 1, total_files, fname));
 
         let mut last_err = None;
         let mut ok = false;
-        for attempt in 0..=NET_RETRY_BACKOFF_MS.len() {
+        for attempt in 0..=backoffs.len() {
             if attempt > 0 {
                 on_progress(
                     base_pct as u8,
                     &format!(
-                        "网络波动，清理残片并第 {}/{} 次重试上传 {}…",
+                        "网络波动，核查远端状态并第 {}/{} 次重试上传 {}…",
                         attempt,
-                        NET_RETRY_BACKOFF_MS.len(),
+                        backoffs.len(),
                         fname
                     ),
                 );
-                // Clean up any partial / "starter" orphan asset left by a previous interrupted upload
                 if let Some(rid) = rel_id_opt {
-                    delete_github_asset_by_name(api_root, &headers, token, repo, rid, fname);
+                    if check_or_cleanup_github_asset(api_root, &headers, token, repo, rid, fname, *size) {
+                        on_progress(
+                            (base_pct + span_pct).min(95) as u8,
+                            &format!("✓ {} 已在远端完整落盘，免重传继续", fname),
+                        );
+                        ok = true;
+                        break;
+                    }
                 }
-                std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
+                std::thread::sleep(Duration::from_millis(backoffs[attempt - 1]));
             }
             let mut f = File::open(path)?;
             let current_size = f.metadata()?.len();
@@ -1757,13 +2226,22 @@ where
                     current_size
                 ));
             }
-            match winhttp_request("POST", &up_url, &up_headers, Some((&mut f, *size)), |done, tot| {
-                let sub = if tot > 0 { ((done * span_pct as u64) / tot) as usize } else { 0 };
-                on_progress(
-                    (base_pct + sub).min(97) as u8,
-                    &format!("上传 {} ({:.1}/{:.1} MB)", fname, done as f64 / 1048576.0, tot as f64 / 1048576.0),
-                );
-            }) {
+            // 首次走系统自动代理，遇到传输错误重试时交替切换直连，规避代理节点断流/超时
+            let use_auto_proxy = attempt % 2 == 0;
+            match winhttp_request_with_proxy(
+                "POST",
+                &up_url,
+                &up_headers,
+                Some((&mut f, *size)),
+                use_auto_proxy,
+                |done, tot| {
+                    let sub = if tot > 0 { ((done * span_pct as u64) / tot) as usize } else { 0 };
+                    on_progress(
+                        (base_pct + sub).min(95) as u8,
+                        &format!("上传 {} ({:.1}/{:.1} MB)", fname, done as f64 / 1048576.0, tot as f64 / 1048576.0),
+                    );
+                },
+            ) {
                 Ok(r) if r.status >= 200 && r.status < 300 => {
                     if let Err(ve) = verify_uploaded_asset_response(fname, *size, &r) {
                         if let Ok(val) = r.json() {
@@ -1780,11 +2258,11 @@ where
                 }
                 Ok(r) => {
                     last_err = Some(anyhow!("上传 {} 失败 (HTTP {})：{}", fname, r.status, scrub_secret(&r.text(), token)));
-                    if r.status == 422 && rel_id_opt.is_some() && attempt < NET_RETRY_BACKOFF_MS.len() {
-                        // Colliding starter asset from earlier attempt — loop will clean it up and retry
+                    if r.status == 422 && rel_id_opt.is_some() && attempt < backoffs.len() {
+                        // Colliding starter asset from earlier attempt — loop will check/clean it up and retry
                         continue;
                     }
-                    if r.status < 500 && r.status != 429 {
+                    if !is_retryable_http_status(r.status) {
                         break;
                     }
                 }
@@ -1794,10 +2272,49 @@ where
             }
         }
         if !ok {
+            // 最后一次机会：连接在响应阶段中断但远端可能已完整落盘
+            if let Some(rid) = rel_id_opt {
+                if check_or_cleanup_github_asset(api_root, &headers, token, repo, rid, fname, *size) {
+                    ok = true;
+                }
+            }
+        }
+        if !ok {
             return Err(last_err.unwrap_or_else(|| anyhow!("上传 {} 失败", fname)));
         }
     }
 
+    // 所有资产上传并校验通过后，将暂存草稿原子转正为正式/预发布版本，并显式写入 make_latest
+    if staged_as_draft {
+        if let Some(rid) = rel_id_opt {
+            on_progress(96, "所有资产已就绪，正在原子公开 Release…");
+            let patch_url = format!("{}/repos/{}/releases/{}", api_root, repo, rid);
+            let body = serde_json::json!({
+                "name": req.title.trim(),
+                "body": req.notes.trim(),
+                "draft": false,
+                "prerelease": req.prerelease,
+                "make_latest": make_latest,
+            });
+            let published = http_json_with_retry("PATCH", &patch_url, &headers, Some(&body), token)?;
+            if published.status >= 300 {
+                return Err(anyhow!(
+                    "所有资产已上传，但公开 Release 失败 (HTTP {})：{}",
+                    published.status,
+                    scrub_secret(&published.text(), token)
+                ));
+            }
+            if let Ok(pj) = published.json() {
+                if let Some(u) = pj.get("html_url").and_then(|v| v.as_str()) {
+                    if !u.is_empty() {
+                        html_url = u.to_string();
+                    }
+                }
+            }
+        }
+    }
+
+    verify_and_repair_github_release(api_root, &headers, token, repo, tag, req, files, on_progress)?;
     on_progress(100, "GitHub Release 发布完成");
     Ok(html_url)
 }
@@ -1909,11 +2426,12 @@ where
         up_headers.push(("Content-Type", format!("multipart/form-data; boundary={}", boundary)));
         let base_pct = 15 + (idx * 80) / total_files;
         let span_pct = (80 / total_files).max(1);
+        let backoffs = asset_retry_backoffs(api_root);
         let mut last_err = None;
         let mut ok = false;
-        for attempt in 0..=NET_RETRY_BACKOFF_MS.len() {
+        for attempt in 0..=backoffs.len() {
             if attempt > 0 {
-                std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
+                std::thread::sleep(Duration::from_millis(backoffs[attempt - 1]));
             }
             let current_size = std::fs::metadata(path)?.len();
             if current_size != *expected_size {
@@ -1925,7 +2443,7 @@ where
                 ));
             }
             let (mut reader, total_len) = MultipartFileReader::new("file", fname, path, &boundary)?;
-            match winhttp_request("POST", &up_url, &up_headers, Some((&mut reader, total_len)), |done, tot| {
+            match winhttp_request_with_proxy("POST", &up_url, &up_headers, Some((&mut reader, total_len)), attempt % 2 == 0, |done, tot| {
                 let sub = if tot > 0 { ((done * span_pct as u64) / tot) as usize } else { 0 };
                 on_progress((base_pct + sub).min(97) as u8, &format!("上传 {}…", fname));
             }) {
@@ -1944,7 +2462,7 @@ where
                         resp.status,
                         scrub_secret(&resp.text(), token)
                     ));
-                    if resp.status < 500 && resp.status != 429 {
+                    if !is_retryable_http_status(resp.status) {
                         break;
                     }
                 }
@@ -1990,14 +2508,15 @@ where
         let up_headers = auth_headers("gitlab", token);
         let base_pct = 12 + (idx * 75) / total_files;
         let span_pct = (75 / total_files).max(1);
+        let backoffs = asset_retry_backoffs(api_root);
         let mut last_err = None;
         let mut ok = false;
-        for attempt in 0..=NET_RETRY_BACKOFF_MS.len() {
+        for attempt in 0..=backoffs.len() {
             if attempt > 0 {
-                std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
+                std::thread::sleep(Duration::from_millis(backoffs[attempt - 1]));
             }
             let mut f = File::open(path)?;
-            match winhttp_request("PUT", &up_url, &up_headers, Some((&mut f, *size)), |done, tot| {
+            match winhttp_request_with_proxy("PUT", &up_url, &up_headers, Some((&mut f, *size)), attempt % 2 == 0, |done, tot| {
                 let sub = if tot > 0 { ((done * span_pct as u64) / tot) as usize } else { 0 };
                 on_progress((base_pct + sub).min(90) as u8, &format!("上传 {}…", fname));
             }) {
@@ -2012,7 +2531,7 @@ where
                         resp.status,
                         scrub_secret(&resp.text(), token)
                     ));
-                    if resp.status < 500 && resp.status != 429 {
+                    if !is_retryable_http_status(resp.status) {
                         break;
                     }
                 }
@@ -2181,11 +2700,12 @@ where
         up_headers.push(("Content-Type", format!("multipart/form-data; boundary={}", boundary)));
         let base_pct = 15 + (idx * 80) / total_files;
         let span_pct = (80 / total_files).max(1);
+        let backoffs = asset_retry_backoffs(api_root);
         let mut last_err = None;
         let mut ok = false;
-        for attempt in 0..=NET_RETRY_BACKOFF_MS.len() {
+        for attempt in 0..=backoffs.len() {
             if attempt > 0 {
-                std::thread::sleep(Duration::from_millis(NET_RETRY_BACKOFF_MS[attempt - 1]));
+                std::thread::sleep(Duration::from_millis(backoffs[attempt - 1]));
             }
             let current_size = std::fs::metadata(path)?.len();
             if current_size != *expected_size {
@@ -2197,7 +2717,7 @@ where
                 ));
             }
             let (mut reader, total_len) = MultipartFileReader::new("attachment", fname, path, &boundary)?;
-            match winhttp_request("POST", &up_url, &up_headers, Some((&mut reader, total_len)), |done, tot| {
+            match winhttp_request_with_proxy("POST", &up_url, &up_headers, Some((&mut reader, total_len)), attempt % 2 == 0, |done, tot| {
                 let sub = if tot > 0 { ((done * span_pct as u64) / tot) as usize } else { 0 };
                 on_progress((base_pct + sub).min(97) as u8, &format!("上传 {}…", fname));
             }) {
@@ -2216,7 +2736,7 @@ where
                         resp.status,
                         scrub_secret(&resp.text(), token)
                     ));
-                    if resp.status < 500 && resp.status != 429 {
+                    if !is_retryable_http_status(resp.status) {
                         break;
                     }
                 }
@@ -2507,7 +3027,8 @@ mod tests {
 
         let srv = std::thread::spawn(move || {
             let mut bin_upload_attempts = 0usize;
-            for _ in 0..15 {
+            let mut uploaded_latest = false;
+            for _ in 0..25 {
                 let Ok((mut stream, _)) = listener.accept() else {
                     break;
                 };
@@ -2551,9 +3072,13 @@ mod tests {
                     ("GET", "/repos/acme/app/releases/tags/v1.0.0") => (
                         "200 OK",
                         format!(
-                            r#"{{"id":77,"tag_name":"v1.0.0","upload_url":"{}/upload/77{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v1.0.0","assets":[{{"id":501,"name":"App_1.0.0_x64-setup.exe"}},{{"id":502,"name":"latest.json"}}]}}"#,
+                            r#"{{"id":77,"tag_name":"v1.0.0","upload_url":"{}/upload/77{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v1.0.0","assets":[{{"id":501,"name":"App_1.0.0_x64-setup.exe"}},{{"id":502,"name":"latest.json"}},{{"id":504,"name":"SHA256SUMS.txt"}}]}}"#,
                             api_srv
                         ),
+                    ),
+                    ("GET", "/repos/acme/app/releases/latest") => (
+                        "200 OK",
+                        r#"{"id":77,"tag_name":"v1.0.0"}"#.to_string(),
                     ),
                     ("PATCH", "/repos/acme/app/releases/77") => (
                         "200 OK",
@@ -2612,6 +3137,9 @@ mod tests {
                 let _ = stream.write_all(resp.as_bytes());
                 let _ = stream.flush();
                 if target.contains("latest.json") && method == "POST" {
+                    uploaded_latest = true;
+                }
+                if uploaded_latest && target == "/repos/acme/app/releases/latest" && method == "GET" {
                     break;
                 }
             }
@@ -2789,6 +3317,429 @@ mod tests {
         let _ = srv.join();
         let log = events.lock().unwrap().clone();
         assert_eq!(log, vec!["GET_RELEASE_77", "DELETE_LATEST_802", "UPLOAD_LATEST"]);
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[test]
+    fn test_validate_github_manifest_target_blocks_stale_repo_or_tag() {
+        let base = std::env::temp_dir().join(format!(
+            "shipforge_gh_target_{}",
+            chrono::Local::now().timestamp_nanos_opt().unwrap_or(11)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let write_mf = |url: &str| {
+            let doc = serde_json::json!({
+                "version": "1.2.0",
+                "channel": "stable",
+                "installer": { "file": "App_1.2.0.exe", "url": url, "sha256": "a".repeat(64), "size": 10 }
+            });
+            std::fs::write(base.join("latest.json"), serde_json::to_string(&doc).unwrap()).unwrap();
+        };
+
+        // Wrong owner/repo must be blocked
+        write_mf("https://github.com/OldOwner/app/releases/download/v1.2.0/App_1.2.0.exe");
+        let err = validate_github_manifest_target(
+            &base,
+            "github",
+            "Bireo/app",
+            "v1.2.0",
+            &["latest.json".into()],
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("不一致"), "{}", err);
+
+        // Wrong tag must be blocked
+        write_mf("https://github.com/Bireo/app/releases/download/v1.1.0/App_1.2.0.exe");
+        let err2 = validate_github_manifest_target(
+            &base,
+            "github",
+            "Bireo/app",
+            "v1.2.0",
+            &["latest.json".into()],
+        )
+        .unwrap_err();
+        assert!(err2.to_string().contains("不一致"), "{}", err2);
+
+        // Case-insensitive owner/repo match passes
+        write_mf("https://github.com/bireo/APP/releases/download/v1.2.0/App_1.2.0.exe");
+        validate_github_manifest_target(
+            &base,
+            "github",
+            "Bireo/app",
+            "v1.2.0",
+            &["latest.json".into()],
+        )
+        .unwrap();
+
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_github_atomic_draft_staging_and_make_latest_for_new_release() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let base = std::env::temp_dir().join(format!(
+            "shipforge_atomic_draft_{}",
+            chrono::Local::now().timestamp_nanos_opt().unwrap_or(22)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let bin_path = base.join("App_2.0.0_x64-setup.exe");
+        let bin_data = b"MZ-atomic-staging-bytes";
+        std::fs::write(&bin_path, bin_data).unwrap();
+        let bin_sha = crate::packager::sha256_file(&bin_path).unwrap();
+        let mf_path = base.join("latest.json");
+        let mf_body = serde_json::json!({
+            "version": "2.0.0",
+            "channel": "stable",
+            "installer": {
+                "file": "App_2.0.0_x64-setup.exe",
+                "url": "https://github.com/acme/app/releases/download/v2.0.0/App_2.0.0_x64-setup.exe",
+                "size": bin_data.len(),
+                "sha256": bin_sha
+            }
+        });
+        std::fs::write(&mf_path, serde_json::to_string(&mf_body).unwrap()).unwrap();
+        let mf_len = std::fs::metadata(&mf_path).unwrap().len();
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let api_root = format!("http://127.0.0.1:{}", port);
+
+        let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let ev_srv = events.clone();
+        let api_srv = api_root.clone();
+
+        let srv = std::thread::spawn(move || {
+            let mut published_final = false;
+            for _ in 0..25 {
+                let Ok((mut stream, _)) = listener.accept() else { break };
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut raw = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let mut header_end = None;
+                let mut content_len = 0usize;
+                loop {
+                    let Ok(n) = stream.read(&mut tmp) else { break };
+                    if n == 0 { break; }
+                    raw.extend_from_slice(&tmp[..n]);
+                    if header_end.is_none() {
+                        if let Some(pos) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                            header_end = Some(pos + 4);
+                            let hdrs = String::from_utf8_lossy(&raw[..pos]);
+                            for line in hdrs.lines() {
+                                if let Some((k, v)) = line.split_once(':') {
+                                    if k.trim().eq_ignore_ascii_case("content-length") {
+                                        content_len = v.trim().parse().unwrap_or(0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(he) = header_end {
+                        if raw.len() >= he + content_len { break; }
+                    }
+                }
+                let he = header_end.unwrap_or(raw.len());
+                let head = String::from_utf8_lossy(&raw[..he]);
+                let req_body = String::from_utf8_lossy(&raw[he..]).to_string();
+                let mut parts = head.lines().next().unwrap_or("").split_whitespace();
+                let method = parts.next().unwrap_or("");
+                let target = parts.next().unwrap_or("");
+
+                let (status, resp_body) = match (method, target) {
+                    ("GET", "/repos/acme/app/releases/tags/v2.0.0") => {
+                        if published_final {
+                            (
+                                "200 OK",
+                                format!(
+                                    r#"{{"id":88,"tag_name":"v2.0.0","draft":false,"prerelease":false,"upload_url":"{}/upload/88{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v2.0.0","assets":[{{"id":1,"name":"App_2.0.0_x64-setup.exe","state":"uploaded","size":{}}},{{"id":2,"name":"latest.json","state":"uploaded","size":{}}}]}}"#,
+                                    api_srv, bin_data.len(), mf_len
+                                ),
+                            )
+                        } else {
+                            ("404 Not Found", "{}".to_string())
+                        }
+                    }
+                    ("GET", "/repos/acme/app/releases?per_page=30") => ("200 OK", "[]".to_string()),
+                    ("GET", "/repos/acme/app/releases/latest") => {
+                        if published_final {
+                            ("200 OK", r#"{"id":88,"tag_name":"v2.0.0"}"#.to_string())
+                        } else {
+                            ("200 OK", r#"{"id":70,"tag_name":"v1.9.0"}"#.to_string())
+                        }
+                    }
+                    ("POST", "/repos/acme/app/releases") => {
+                        let v: Value = serde_json::from_str(&req_body).unwrap_or(Value::Null);
+                        ev_srv.lock().unwrap().push(format!("CREATE_DRAFT={}", v["draft"]));
+                        (
+                            "201 Created",
+                            format!(
+                                r#"{{"id":88,"tag_name":"v2.0.0","draft":true,"prerelease":false,"upload_url":"{}/upload/88{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v2.0.0"}}"#,
+                                api_srv
+                            ),
+                        )
+                    }
+                    ("POST", p) if p.starts_with("/upload/88?name=") => {
+                        let fname = p.trim_start_matches("/upload/88?name=");
+                        ev_srv.lock().unwrap().push(format!("UPLOAD {}", fname));
+                        (
+                            "201 Created",
+                            format!(r#"{{"id":9,"name":"{}","state":"uploaded","size":{}}}"#, fname, content_len),
+                        )
+                    }
+                    ("PATCH", "/repos/acme/app/releases/88") => {
+                        let v: Value = serde_json::from_str(&req_body).unwrap_or(Value::Null);
+                        ev_srv.lock().unwrap().push(format!(
+                            "PUBLISH draft={} pre={} make_latest={}",
+                            v["draft"],
+                            v["prerelease"],
+                            v["make_latest"].as_str().unwrap_or("")
+                        ));
+                        published_final = true;
+                        (
+                            "200 OK",
+                            format!(
+                                r#"{{"id":88,"tag_name":"v2.0.0","draft":false,"prerelease":false,"html_url":"https://github.com/acme/app/releases/tag/v2.0.0"}}"#
+                            ),
+                        )
+                    }
+                    _ => ("404 Not Found", "{}".to_string()),
+                };
+
+                let resp = format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+                if published_final && target == "/repos/acme/app/releases/latest" && method == "GET" {
+                    break;
+                }
+            }
+        });
+
+        let files = vec![
+            ("App_2.0.0_x64-setup.exe".into(), bin_path.clone(), bin_data.len() as u64),
+            ("latest.json".into(), mf_path.clone(), mf_len),
+        ];
+        let req = MultiPublishRequest {
+            project_id: "rt".into(),
+            provider: "github".into(),
+            base_url: api_root.clone(),
+            credential_id: String::new(),
+            repo: "acme/app".into(),
+            tag: "v2.0.0".into(),
+            title: "App v2.0.0".into(),
+            notes: "notes".into(),
+            files: vec!["App_2.0.0_x64-setup.exe".into(), "latest.json".into()],
+            prerelease: false,
+            draft: false,
+            overwrite_assets: true,
+        };
+
+        let url = publish_github(&api_root, "tok", "acme/app", "v2.0.0", &req, &files, &mut |_, _| {})
+            .expect("atomic draft-staged publish must succeed");
+        assert!(url.ends_with("/v2.0.0"));
+        let _ = srv.join();
+
+        let log = events.lock().unwrap().clone();
+        assert_eq!(
+            log,
+            vec![
+                "CREATE_DRAFT=true",
+                "UPLOAD App_2.0.0_x64-setup.exe",
+                "UPLOAD latest.json",
+                "PUBLISH draft=false pre=false make_latest=true"
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn test_github_reuses_existing_draft_and_recovers_from_http_408_landed_asset() {
+        use std::io::{Read, Write};
+        use std::net::TcpListener;
+        use std::sync::{Arc, Mutex};
+
+        let base = std::env::temp_dir().join(format!(
+            "shipforge_draft_recover_{}",
+            chrono::Local::now().timestamp_nanos_opt().unwrap_or(33)
+        ));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+
+        let bin_path = base.join("App_2.1.0_x64-setup.exe");
+        let bin_data = b"MZ-recover-after-408-payload";
+        std::fs::write(&bin_path, bin_data).unwrap();
+        let bin_len = bin_data.len() as u64;
+
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let api_root = format!("http://127.0.0.1:{}", port);
+
+        let events: Arc<Mutex<Vec<String>>> = Arc::new(Mutex::new(Vec::new()));
+        let ev_srv = events.clone();
+        let api_srv = api_root.clone();
+
+        let srv = std::thread::spawn(move || {
+            let mut published_final = false;
+            for _ in 0..25 {
+                let Ok((mut stream, _)) = listener.accept() else { break };
+                let _ = stream.set_read_timeout(Some(Duration::from_secs(2)));
+                let mut raw = Vec::new();
+                let mut tmp = [0u8; 4096];
+                let mut header_end = None;
+                let mut content_len = 0usize;
+                loop {
+                    let Ok(n) = stream.read(&mut tmp) else { break };
+                    if n == 0 { break; }
+                    raw.extend_from_slice(&tmp[..n]);
+                    if header_end.is_none() {
+                        if let Some(pos) = raw.windows(4).position(|w| w == b"\r\n\r\n") {
+                            header_end = Some(pos + 4);
+                            let hdrs = String::from_utf8_lossy(&raw[..pos]);
+                            for line in hdrs.lines() {
+                                if let Some((k, v)) = line.split_once(':') {
+                                    if k.trim().eq_ignore_ascii_case("content-length") {
+                                        content_len = v.trim().parse().unwrap_or(0);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    if let Some(he) = header_end {
+                        if raw.len() >= he + content_len { break; }
+                    }
+                }
+                let he = header_end.unwrap_or(raw.len());
+                let head = String::from_utf8_lossy(&raw[..he]);
+                let mut parts = head.lines().next().unwrap_or("").split_whitespace();
+                let method = parts.next().unwrap_or("");
+                let target = parts.next().unwrap_or("");
+
+                let (status, resp_body) = match (method, target) {
+                    ("GET", "/repos/acme/app/releases/tags/v2.1.0") => {
+                        if published_final {
+                            (
+                                "200 OK",
+                                format!(
+                                    r#"{{"id":91,"tag_name":"v2.1.0","draft":false,"prerelease":false,"assets":[{{"id":701,"name":"App_2.1.0_x64-setup.exe","state":"uploaded","size":{}}}]}}"#,
+                                    bin_len
+                                ),
+                            )
+                        } else {
+                            // GitHub always returns 404 on /releases/tags/{tag} for Drafts
+                            ("404 Not Found", "{}".to_string())
+                        }
+                    }
+                    ("GET", "/repos/acme/app/releases?per_page=30") => {
+                        ev_srv.lock().unwrap().push("LIST_FOUND_DRAFT_91".into());
+                        (
+                            "200 OK",
+                            format!(
+                                r#"[{{"id":91,"tag_name":"v2.1.0","draft":true,"prerelease":false,"upload_url":"{}/upload/91{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v2.1.0","assets":[]}}]"#,
+                                api_srv
+                            ),
+                        )
+                    }
+                    ("GET", "/repos/acme/app/releases/latest") => {
+                        if published_final {
+                            ("200 OK", r#"{"id":91,"tag_name":"v2.1.0"}"#.to_string())
+                        } else {
+                            ("200 OK", r#"{"id":88,"tag_name":"v2.0.0"}"#.to_string())
+                        }
+                    }
+                    ("PATCH", "/repos/acme/app/releases/91") => {
+                        let req_body = String::from_utf8_lossy(&raw[he..]);
+                        let v: Value = serde_json::from_str(&req_body).unwrap_or(Value::Null);
+                        if v["draft"] == Value::Bool(false) {
+                            published_final = true;
+                            ev_srv.lock().unwrap().push("PATCH_PUBLISH_91".into());
+                        } else {
+                            ev_srv.lock().unwrap().push("PATCH_STAGE_DRAFT_91".into());
+                        }
+                        (
+                            "200 OK",
+                            format!(
+                                r#"{{"id":91,"tag_name":"v2.1.0","draft":{},"prerelease":false,"upload_url":"{}/upload/91{{?name}}","html_url":"https://github.com/acme/app/releases/tag/v2.1.0"}}"#,
+                                !published_final, api_srv
+                            ),
+                        )
+                    }
+                    ("POST", p) if p.starts_with("/upload/91?name=") => {
+                        ev_srv.lock().unwrap().push("UPLOAD_408_TIMEOUT".into());
+                        // Simulate proxy/server timeout AFTER GitHub finished saving the asset
+                        ("408 Request Timeout", r#"{"message":"timeout"}"#.to_string())
+                    }
+                    ("GET", p) if p.starts_with("/repos/acme/app/releases/91/assets") => {
+                        ev_srv.lock().unwrap().push("ASSETS_CHECK_RECOVERED".into());
+                        (
+                            "200 OK",
+                            format!(
+                                r#"[{{"id":701,"name":"App_2.1.0_x64-setup.exe","state":"uploaded","size":{}}}]"#,
+                                bin_len
+                            ),
+                        )
+                    }
+                    _ => ("404 Not Found", "{}".to_string()),
+                };
+
+                let resp = format!(
+                    "HTTP/1.1 {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    status,
+                    resp_body.len(),
+                    resp_body
+                );
+                let _ = stream.write_all(resp.as_bytes());
+                let _ = stream.flush();
+                if published_final && target == "/repos/acme/app/releases/latest" && method == "GET" {
+                    break;
+                }
+            }
+        });
+
+        let files = vec![("App_2.1.0_x64-setup.exe".into(), bin_path.clone(), bin_len)];
+        let req = MultiPublishRequest {
+            project_id: "rt".into(),
+            provider: "github".into(),
+            base_url: api_root.clone(),
+            credential_id: String::new(),
+            repo: "acme/app".into(),
+            tag: "v2.1.0".into(),
+            title: "App v2.1.0".into(),
+            notes: "notes".into(),
+            files: vec!["App_2.1.0_x64-setup.exe".into()],
+            prerelease: false,
+            draft: false,
+            overwrite_assets: false, // Even with overwrite_assets=false, resuming an existing draft must work!
+        };
+
+        let url = publish_github(&api_root, "tok", "acme/app", "v2.1.0", &req, &files, &mut |_, _| {})
+            .expect("should reuse draft 91 and recover from 408 without redundant upload");
+        assert!(url.ends_with("/v2.1.0"));
+        let _ = srv.join();
+
+        let log = events.lock().unwrap().clone();
+        assert_eq!(
+            log,
+            vec![
+                "LIST_FOUND_DRAFT_91",
+                "PATCH_STAGE_DRAFT_91",
+                "UPLOAD_408_TIMEOUT",
+                "ASSETS_CHECK_RECOVERED",
+                "PATCH_PUBLISH_91"
+            ]
+        );
         let _ = std::fs::remove_dir_all(&base);
     }
 }

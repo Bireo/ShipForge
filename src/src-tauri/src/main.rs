@@ -2750,7 +2750,9 @@ fn run_pipeline(
                             args.push("-Bump".into());
                             args.push(req.bump_kind.clone());
                         }
-                        if req.channel == "beta" && build_act.supports_channel {
+                        if version::resolve_release_channel(&req.channel, &current_ver).channel == "beta"
+                            && build_act.supports_channel
+                        {
                             args.push("-Channel".into());
                             args.push("beta".into());
                         }
@@ -2906,7 +2908,7 @@ fn run_pipeline(
                     let mf_req = ManifestRequest {
                         project_id: project.id.clone(),
                         version: current_ver.clone(),
-                        channel: req.channel.clone(),
+                        channel: version::resolve_release_channel(&req.channel, &current_ver).channel.to_string(),
                         url_mode: if !repo.contains('/') {
                             "local".into()
                         } else if prov == "github" {
@@ -3121,6 +3123,20 @@ fn run_pipeline(
                         tag
                     );
                     let pub_files = files.clone();
+                    let ch_decision = version::resolve_release_channel(&req.channel, &current_ver);
+                    if let Some(n) = &ch_decision.note {
+                        emit_log(&app, &pid, "system", &format!("⚠ 通道裁决：{}", n));
+                    }
+                    emit_log(
+                        &app,
+                        &pid,
+                        "system",
+                        &format!(
+                            "发布通道：{}（{}）",
+                            ch_decision.channel,
+                            if ch_decision.prerelease { "预发布" } else { "正式发布" }
+                        ),
+                    );
                     let mp_req = MultiPublishRequest {
                         project_id: project.id.clone(),
                         provider: prov.clone(),
@@ -3131,7 +3147,7 @@ fn run_pipeline(
                         title,
                         notes,
                         files,
-                        prerelease: req.channel == "beta",
+                        prerelease: ch_decision.prerelease,
                         draft: req.draft,
                         overwrite_assets: true,
                     };
@@ -3488,7 +3504,7 @@ fn deploy_existing_release(
                         let mf_req = ManifestRequest {
                             project_id: project.id.clone(),
                             version: target_ver.clone(),
-                            channel: req.channel.clone(),
+                            channel: version::resolve_release_channel(&req.channel, &target_ver).channel.to_string(),
                             url_mode: if !repo_slug.contains('/') {
                                 "local".into()
                             } else if prov == "github" {
@@ -3654,6 +3670,20 @@ fn deploy_existing_release(
                         },
                         tag
                     );
+                    let ch_decision = version::resolve_release_channel(&req.channel, &target_ver);
+                    if let Some(n) = &ch_decision.note {
+                        emit_log(&app, &pid, "stderr", &format!("⚠ 通道裁决：{}", n));
+                    }
+                    emit_log(
+                        &app,
+                        &pid,
+                        "stdout",
+                        &format!(
+                            "发布通道：{}（{}）",
+                            ch_decision.channel,
+                            if ch_decision.prerelease { "预发布" } else { "正式发布" }
+                        ),
+                    );
                     let mp_req = MultiPublishRequest {
                         project_id: project.id.clone(),
                         provider: prov.clone(),
@@ -3664,7 +3694,7 @@ fn deploy_existing_release(
                         title,
                         notes: effective_notes.clone(),
                         files: upload_files.clone(),
-                        prerelease: req.channel == "beta" || target_ver.contains('-'),
+                        prerelease: ch_decision.prerelease,
                         draft: req.draft,
                         overwrite_assets: req.overwrite_assets,
                     };
@@ -4797,6 +4827,12 @@ async fn publish_release_multi(
         .trim_start_matches('v')
         .trim_start_matches('V')
         .to_string();
+    // 统一渠道裁决：带预发布后缀的 tag（如 v1.5.0-beta.1）绝不允许按正式版推送
+    let ch_decision = version::resolve_release_channel(
+        if req.prerelease { "beta" } else { "stable" },
+        &tag_ver,
+    );
+    req.prerelease = ch_decision.prerelease;
     if version::is_bare_default_release_note(&req.notes) {
         req.notes = resolve_release_notes_for_project(&project, &tag_ver, &other_roots);
     } else {

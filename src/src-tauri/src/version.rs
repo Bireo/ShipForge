@@ -1806,3 +1806,109 @@ serde = { version = "1.0", features = ["derive"] }
         let _ = fs::remove_dir_all(&dir);
     }
 }
+
+// ---------------------------------------------------------------- 发布通道裁决（唯一真相源）
+
+/// 版本号是否为 SemVer 预发布（`1.2.3-beta.1`）；构建元数据 `+build-5` 里的连字符不算。
+pub fn version_is_prerelease(ver: &str) -> bool {
+    let v = ver.trim().trim_start_matches(['v', 'V']);
+    let core = v.split('+').next().unwrap_or(v);
+    core.contains('-')
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ChannelDecision {
+    /// 只会是 `"stable"` 或 `"beta"`
+    pub channel: &'static str,
+    /// 是否作为 GitHub/Gitee 等平台的「预发布」推送
+    pub prerelease: bool,
+    /// 需要告知用户的修正/风险说明
+    pub note: Option<String>,
+}
+
+/// 把用户请求的通道（任意大小写/别名/空值）与版本号一起裁决成唯一的发布通道。
+///
+/// - 带预发布后缀的版本（`1.2.0-beta.1`）一律是 beta，绝不会当作正式版推给所有人；
+/// - 请求值做 trim + 大小写 + 常见别名归一，杜绝 `"Beta "`、`"测试版"` 这类写法在不同调用点判断不一致；
+/// - 正式号 + 明确选了测试版 → 尊重（方向安全：不会泄漏给正式版用户），但返回风险说明。
+pub fn resolve_release_channel(requested: &str, version: &str) -> ChannelDecision {
+    let req = requested.trim().to_lowercase();
+    let want_beta = matches!(
+        req.as_str(),
+        "beta" | "test" | "testing" | "preview" | "pre" | "prerelease" | "pre-release"
+            | "rc" | "alpha" | "nightly" | "canary" | "dev" | "测试版" | "测试" | "预览版"
+    );
+    let known_stable = matches!(
+        req.as_str(),
+        "" | "stable" | "release" | "production" | "prod" | "latest" | "main" | "正式版" | "正式"
+    );
+    if version_is_prerelease(version) {
+        let note = if want_beta {
+            None
+        } else {
+            Some(format!(
+                "版本 {} 带预发布后缀，已强制按测试版 (beta) 发布，避免推给正式版用户",
+                version.trim()
+            ))
+        };
+        return ChannelDecision { channel: "beta", prerelease: true, note };
+    }
+    if want_beta {
+        return ChannelDecision {
+            channel: "beta",
+            prerelease: true,
+            note: Some(format!(
+                "版本 {} 是正式版本号，但通道选了测试版：将作为预发布推送，正式版用户不会收到",
+                version.trim()
+            )),
+        };
+    }
+    let note = if known_stable {
+        None
+    } else {
+        Some(format!("未识别的发布通道「{}」，已按正式版 (stable) 处理", requested.trim()))
+    };
+    ChannelDecision { channel: "stable", prerelease: false, note }
+}
+
+#[cfg(test)]
+mod channel_tests {
+    use super::*;
+
+    #[test]
+    fn prerelease_detection_ignores_build_metadata_hyphen() {
+        assert!(version_is_prerelease("1.2.0-beta.1"));
+        assert!(version_is_prerelease("v1.2.0-rc.2"));
+        assert!(!version_is_prerelease("1.2.0"));
+        assert!(!version_is_prerelease("1.2.0+build-5"));
+    }
+
+    #[test]
+    fn prerelease_version_can_never_be_stable_even_if_requested() {
+        for req in ["stable", "", "STABLE", "garbage"] {
+            let d = resolve_release_channel(req, "1.5.0-beta.3");
+            assert_eq!(d.channel, "beta", "req={req}");
+            assert!(d.prerelease);
+            assert!(d.note.is_some());
+        }
+        let ok = resolve_release_channel("beta", "1.5.0-beta.3");
+        assert!(ok.prerelease && ok.note.is_none());
+    }
+
+    #[test]
+    fn plain_version_normalizes_aliases_and_flags_explicit_beta() {
+        for req in ["stable", "Stable ", "", "正式版", "latest"] {
+            let d = resolve_release_channel(req, "1.5.0");
+            assert_eq!((d.channel, d.prerelease), ("stable", false), "req={req}");
+            assert!(d.note.is_none(), "req={req}");
+        }
+        for req in ["beta", " Beta ", "测试版", "RC", "nightly"] {
+            let d = resolve_release_channel(req, "1.5.0");
+            assert_eq!((d.channel, d.prerelease), ("beta", true), "req={req}");
+            assert!(d.note.is_some(), "explicit beta on plain version must warn: {req}");
+        }
+        let unk = resolve_release_channel("weird", "1.5.0");
+        assert_eq!(unk.channel, "stable");
+        assert!(unk.note.is_some());
+    }
+}

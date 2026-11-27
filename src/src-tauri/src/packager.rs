@@ -840,7 +840,10 @@ pub fn generate_manifest(release_dir: &Path, req: &ManifestRequest) -> Result<Ma
     let mut manifest = serde_json::Map::new();
     manifest.insert("schemaVersion".into(), serde_json::json!(1));
     manifest.insert("version".into(), serde_json::json!(req.version.trim()));
-    manifest.insert("channel".into(), serde_json::json!(req.channel.trim()));
+    manifest.insert(
+        "channel".into(),
+        serde_json::json!(crate::version::resolve_release_channel(&req.channel, req.version.trim()).channel),
+    );
     manifest.insert(
         "pubDate".into(),
         serde_json::json!(Local::now().format("%Y-%m-%dT%H:%M:%S%:z").to_string()),

@@ -952,7 +952,7 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
 
       <div class="field-row" style="justify-content:space-between;padding-top:8px;border-top:1px solid var(--line)">
         <div class="field-row" style="gap:14px">
-          <label class="sf-switch-label" style="font-size:12px"><input class="sf-switch" type="checkbox" switch role="switch" id="mpPre" ${composeState.prerelease ? "checked" : ""}><span>Prerelease</span></label>
+          <label class="sf-switch-label" style="font-size:12px"><input class="sf-switch" type="checkbox" switch role="switch" id="mpPre" ${composeState.prerelease ? "checked" : ""}><span>测试版 (Prerelease)</span></label>
           <label class="sf-switch-label" style="font-size:12px"><input class="sf-switch" type="checkbox" switch role="switch" id="mpDraft" ${composeState.draft ? "checked" : ""}><span>Draft 草稿</span></label>
           <label class="sf-switch-label" style="font-size:12px"><input class="sf-switch" type="checkbox" switch role="switch" id="mpOverwrite" ${composeState.overwriteAssets ? "checked" : ""}><span>覆盖同名资产</span></label>
         </div>
@@ -971,7 +971,7 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
 
     pane.querySelector("#mpTag")?.addEventListener("change", (e) => {
       composeState.tag = e.target.value;
-      const isPre = composeState.tag.includes("-");
+      const isPre = String(composeState.tag || "").split("+")[0].includes("-");
       composeState.prerelease = isPre;
       const preEl = pane.querySelector("#mpPre");
       if (preEl) preEl.checked = isPre;
@@ -1087,11 +1087,23 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
           toast("请至少勾选一个待上传产物", "warn");
           return;
         }
+        const tagIsPre = String(tag || "").split("+")[0].includes("-");
+        const effectivePre = tagIsPre || composeState.prerelease;
+        const channelDesc = composeState.draft
+          ? "草稿 (Draft · 不会推送给软件用户)"
+          : effectivePre
+          ? "测试版 (Prerelease · 仅测试版通道可见，正式版用户收不到)"
+          : "正式版 (Stable · 正式版用户可立即收到更新)";
+        const mismatchWarn =
+          !tagIsPre && composeState.prerelease && !composeState.draft
+            ? `\n⚠ 注意：${tag} 是正式版本号，但勾选了「测试版」，正式版用户将不会收到本次更新！`
+            : "";
         const ok = await confirmDialog({
           title: `确认发布至 ${providerDisplay(provider)}`,
           message: `将 ${files.length} 个文件上传到 ${repo} (${tag})？`,
-          detail: files.join("\n"),
+          detail: `发布渠道：${channelDesc}${mismatchWarn}\n\n上传文件：\n${files.join("\n")}`,
           confirmText: "确认上传",
+          danger: Boolean(mismatchWarn),
         });
         if (!ok) return;
         try {
@@ -1105,7 +1117,7 @@ function renderMultiRepoTab(container, app, project, versions, artifacts, epoch)
             title,
             notes,
             files,
-            prerelease: composeState.prerelease,
+            prerelease: effectivePre,
             draft: composeState.draft,
             overwriteAssets: composeState.overwriteAssets,
           });
