@@ -25,16 +25,16 @@
 
     :root {
       color-scheme: light dark;
-      --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Inter", "PingFang SC", "Microsoft YaHei UI", "Segoe UI", system-ui, sans-serif;
-      --mono: "SF Mono", "Cascadia Mono", Consolas, monospace;
+      --font: "Inter", "SF Pro Text", "Microsoft YaHei UI", "PingFang SC", "Segoe UI", system-ui, sans-serif;
+      --mono: "Cascadia Mono", "SF Mono", Consolas, "Microsoft YaHei UI", "PingFang SC", "Segoe UI", monospace;
 
-      /* Light tokens (Apple Sequoia × ShipForge Cobalt/Amber) */
+      /* Light tokens (High-Contrast Readable) */
       --bg: #ffffff;
       --bg-subtle: #f5f5f7;
       --border: rgba(0, 0, 0, 0.09);
-      --text-1: #1d1d1f;
-      --text-2: #636366;
-      --text-3: #8e8e93;
+      --text-1: #18181b;
+      --text-2: #48484f;
+      --text-3: #63636b;
       --track: rgba(0, 0, 0, 0.075);
       --ring-track: rgba(15, 23, 42, 0.09);
       --accent-a: #2563eb;
@@ -87,9 +87,9 @@
       --bg: #ffffff;
       --bg-subtle: #f5f5f7;
       --border: rgba(0, 0, 0, 0.09);
-      --text-1: #1d1d1f;
-      --text-2: #636366;
-      --text-3: #8e8e93;
+      --text-1: #18181b;
+      --text-2: #48484f;
+      --text-3: #63636b;
       --track: rgba(0, 0, 0, 0.075);
       --ring-track: rgba(15, 23, 42, 0.09);
       --accent-a: #2563eb;
@@ -115,8 +115,8 @@
       --bg-subtle: #252528;
       --border: rgba(255, 255, 255, 0.11);
       --text-1: #f5f5f7;
-      --text-2: #aeaeb2;
-      --text-3: #8e8e93;
+      --text-2: #c8c8d0;
+      --text-3: #9c9ca6;
       --track: rgba(255, 255, 255, 0.10);
       --ring-track: rgba(148, 163, 184, 0.18);
       --accent-a: #3b82f6;
@@ -152,7 +152,7 @@
       font-size: 13px;
       line-height: 1.45;
       user-select: none;
-      -webkit-font-smoothing: antialiased;
+      -webkit-font-smoothing: auto;
     }
 
     .shell {
@@ -181,7 +181,7 @@
       display: inline-flex;
       align-items: center;
       gap: 6px;
-      font-size: 11px;
+      font-size: 12px;
       font-weight: 600;
       letter-spacing: 0.02em;
       color: var(--text-2);
@@ -199,13 +199,13 @@
       display: inline-flex;
       align-items: center;
       gap: 4px;
-      padding: 2px 7px;
+      padding: 2px 8px;
       border-radius: 999px;
       background: var(--pill-bg);
       color: var(--pill-fg);
       font-family: var(--mono);
-      font-size: 10.5px;
-      font-weight: 600;
+      font-size: 11.5px;
+      font-weight: 500;
       font-variant-numeric: tabular-nums;
     }
 

@@ -134,7 +134,7 @@ function renderPresetsTab(container, app, project, rootExists, epoch) {
               ${p.outputs.map((o) => `<span class="tag">${esc(o)}</span>`).join("")}
             </div>
             <div class="preset-card-foot">
-              <span class="dim" style="font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.requirements.join(" · "))}">需：${esc(p.requirements.join(" · "))}</span>
+              <span class="dim" style="font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${esc(p.requirements.join(" · "))}">需：${esc(p.requirements.join(" · "))}</span>
               <button class="btn btn-xs" data-apply-preset="${esc(p.id)}" type="button" ${rootExists ? "" : "disabled"}>套用</button>
             </div>
           </div>`
@@ -298,7 +298,7 @@ function renderPrereqTab(container, app, project, rootExists, epoch) {
                           ${it.status !== "ok" && it.repairable ? `<input type="checkbox" name="pqPick" value="${esc(it.id)}" checked style="accent-color:var(--accent-btn)">` : ""}
                           <span>${esc(it.name)}</span>
                           <span class="tag ${cls}">${stTxt}</span>
-                          ${it.estimatedMb > 0 && it.status !== "ok" ? `<span class="dim mono" style="font-size:11px">约 ${it.estimatedMb} MB</span>` : ""}
+                          ${it.estimatedMb > 0 && it.status !== "ok" ? `<span class="dim mono" style="font-size:12px">约 ${it.estimatedMb} MB</span>` : ""}
                         </div>
                         <div class="sf-row-desc">${esc(it.reason)} · ${esc(it.detail)}</div>
                       </div>

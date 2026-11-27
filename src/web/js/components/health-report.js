@@ -92,7 +92,7 @@ export function showOneTimeHealthReport(report, app) {
         ${statusTag}
         <span class="mono muted" style="font-size:11.5px">v${esc(report.version)} · ${formatDuration(report.durationMs)}</span>
       </div>
-      <span class="dim" style="font-size:11px">仅本次展示，关闭即销毁</span>
+      <span class="dim" style="font-size:12px">仅本次展示，关闭即销毁</span>
     </div>
     <div class="hr-body scroller">
       <div style="font-size:12.5px;color:var(--text-1)">${esc(report.summary)}</div>

@@ -544,4 +544,33 @@ assert.ok(
   );
 }
 
-console.log("ShipForge frontend selftest: 全部通过 (23/23)");
+// 24. Deep Typography & CJK Readability Contract (Windows ClearType + CJK mono fallback + WCAG AA contrast)
+{
+  const monoMatch = cssSrc.match(/--font-mono:\s*([^;]+);/);
+  assert.ok(
+    monoMatch &&
+      monoMatch[1].includes('"Microsoft YaHei UI"') &&
+      monoMatch[1].indexOf('"Microsoft YaHei UI"') < monoMatch[1].indexOf("monospace"),
+    "--font-mono must include \"Microsoft YaHei UI\" before generic monospace to prevent 1-bit NSimSun CJK fallback"
+  );
+  assert.ok(
+    !cssSrc.includes("-webkit-font-smoothing: antialiased"),
+    "styles.css must not force -webkit-font-smoothing: antialiased (thins Windows DirectWrite ClearType)"
+  );
+  assert.ok(
+    !cssSrc.includes("var(--font-ui)"),
+    "styles.css must not reference undefined var(--font-ui)"
+  );
+  assert.ok(
+    !cssSrc.includes("--text-3-light: #8e8e93"),
+    "--text-3-light must meet WCAG AA readability contrast (darker than #8e8e93)"
+  );
+  const tagBlock = cssSrc.match(/\.tag\s*\{[^}]*\}/)?.[0] || "";
+  assert.ok(
+    tagBlock.includes("font-size: 12px") &&
+      cssSrc.includes(".tag-ok { background: var(--ok-soft); border-color: transparent; color: var(--ok); font-weight: 500; }"),
+    ".tag and colored .tag-* pills must render at 12px weight 500 so CJK tags stay crisp"
+  );
+}
+
+console.log("ShipForge frontend selftest: 全部通过 (24/24)");

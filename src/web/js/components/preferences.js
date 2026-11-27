@@ -718,7 +718,7 @@ function renderUpdatesPane(container, app, isAlive) {
             ${it.isPrerelease ? `<span class="tag tag-warn">Beta</span>` : ""}
             <span style="margin-left:6px">${esc(it.title || "")}</span>
           </span>
-          <span class="dim mono" style="font-size:11px">${esc(it.date || "")}</span>
+          <span class="dim mono" style="font-size:12px">${esc(it.date || "")}</span>
         </summary>
         ${it.body ? `<div class="upd-cl-body">${esc(it.body)}</div>` : ""}
       </details>

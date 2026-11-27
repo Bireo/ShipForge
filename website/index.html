@@ -3,24 +3,25 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>ShipForge · 轻筑 — Windows 本地构建、分包与多平台发布工作台</title>
-  <meta name="description" content="ShipForge（轻筑）：基于 Tauri v2 与原生 Rust 的 Windows 构建、体积分析分包、版本原子同步、多平台发布与官方自动更新桌面工作台。">
+  <title>ShipForge 轻筑 — 本地构建、智能分包与多仓发布工作台</title>
+  <meta name="description" content="ShipForge（轻筑）：原生 Rust + Tauri v2 打造的 Windows 构建、体积分析分包、多文件版本同步、GitHub/Gitee/GitLab/Gitea 流式发布与 SHA-256 自动更新工作台。">
   <meta name="color-scheme" content="light dark">
   <script>
     try {
-      var saved = localStorage.getItem('sf-site-scheme');
+      var saved = localStorage.getItem('shipforge-site-scheme');
       if (saved === 'light' || saved === 'dark') {
         document.querySelector('meta[name="color-scheme"]').content = saved;
       }
     } catch (e) {}
   </script>
   <link rel="icon" type="image/svg+xml" href="assets/logo.svg">
-  <link rel="icon" type="image/png" sizes="256x256" href="assets/icon-256.png">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=20261127v2">
 </head>
 <body>
-  <div id="scroll-progress" class="scroll-progress" aria-hidden="true"></div>
+  <!-- Scroll-Driven Reading Progress Hairline -->
+  <div id="scroll-progress" class="scroll-progress"></div>
 
+  <!-- Minimal Compact Shrinking Header -->
   <header class="site-header" id="site-header">
     <div class="container header-inner">
       <a class="brand" href="#top" aria-label="ShipForge 轻筑">
@@ -28,16 +29,15 @@
           <img src="assets/logo.svg" alt="" width="30" height="30" decoding="async">
         </span>
         <span class="brand-lockup">
-          <span class="brand-en">ShipForge</span>
-          <span class="brand-cn" data-i18n="brand.cn">轻筑</span>
+          <span class="brand-name">ShipForge</span>
+          <span class="brand-cn" data-i18n="brand">轻筑</span>
         </span>
       </a>
 
       <nav class="site-nav" aria-label="Primary">
-        <a href="#pipeline" data-section="pipeline" data-i18n="nav.pipeline">发版流水线</a>
-        <a href="#showcase" data-section="showcase" data-i18n="nav.showcase">核心模块</a>
-        <a href="#benchmarks" data-section="benchmarks" data-i18n="nav.bench">实测指标</a>
-        <a href="#download" data-section="download" data-i18n="nav.download">下载</a>
+        <a href="#showcase" data-section="showcase" data-i18n="nav.showcase">核心流程</a>
+        <a href="#benchmarks" data-section="benchmarks" data-i18n="nav.bench">工程指标</a>
+        <a href="#download" data-section="download" data-i18n="nav.download">下载获取</a>
       </nav>
 
       <div class="header-actions">
@@ -54,13 +54,15 @@
             <span class="sr-only">Switch to light theme</span>
           </span>
         </button>
-        <a class="star-pill" id="header-star-btn" href="https://github.com/Bireo/ShipForge" target="_blank" rel="noopener" aria-label="在 GitHub 上给 ShipForge 点 Star" title="在 GitHub 上查看 ShipForge">
+        <a class="star-pill" id="header-star-btn" href="https://github.com/Bireo/ShipForge" target="_blank" rel="noopener" aria-label="在 GitHub 上给 ShipForge 点 Star" title="在 GitHub 上给 ShipForge 点 Star">
           <svg class="star-gh" viewBox="0 0 24 24" width="15" height="15" fill="currentColor" aria-hidden="true"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.72-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.84c.85 0 1.71.12 2.51.35 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg>
-          <span class="star-label" data-i18n="nav.star">Star</span>
+          <svg class="star-ic" viewBox="0 0 24 24" width="13.5" height="13.5" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+          <span class="star-label" data-i18n="nav.star">点 Star</span>
           <span class="star-count mono" id="header-star-count" hidden></span>
         </a>
-        <button type="button" class="icon-btn coffee-btn" id="header-coffee-btn" aria-label="赞赏支持" title="请作者喝杯咖啡">
-          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <button type="button" class="coffee-btn" id="header-coffee-btn" aria-label="请作者喝杯咖啡" title="请作者喝杯咖啡">
+          <svg class="coffee-ic" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.85" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path class="coffee-steam" d="M8 3.5c0 1.1.8 1.4.8 2.5M12 3c0 1.1.8 1.4.8 2.5"/>
             <path d="M5 9h11v6.2a4.8 4.8 0 0 1-4.8 4.8H9.8A4.8 4.8 0 0 1 5 15.2V9Z"/>
             <path d="M16 10.5h1.8a2.7 2.7 0 0 1 0 5.4H16"/>
             <path d="M4 21h14"/>
@@ -72,393 +74,506 @@
   </header>
 
   <main id="top">
-    <!-- Act I: Blueprint Studio Hero + Interactive 6-Tab Workbench -->
+    <!-- Act I: Editorial Hero + Scroll-Elevated 3D Perspective Stage -->
     <section class="hero">
-      <div class="hero-grid-bg" aria-hidden="true"></div>
-      <div class="container hero-inner">
-        <div class="hero-kicker mono" id="hero-ver-pill">Windows 10/11 x64 · Tauri v2 + Rust · MIT</div>
-        <h1 class="hero-title" data-i18n="hero.title">把本地编译、分包同步与多仓发布收进一个工作台</h1>
-        <p class="hero-sub" data-i18n="hero.sub">
-          专为 Windows 开发者设计的本地发版工具。自动识别多框架与构建脚本，打包前拦截敏感文件，通过 WinHTTP 与 DPAPI 直连 GitHub / Gitee / GitLab / Gitea，并内置 SHA-256 官方自动更新。
-        </p>
-        <div class="hero-cta">
-          <a class="btn primary lg" id="hero-setup-btn" href="https://github.com/Bireo/ShipForge/releases/latest">
-            <span data-i18n="hero.dlSetup">下载安装版 (.exe)</span>
-            <span class="btn-meta mono" id="hero-setup-size">3.4 MB</span>
-          </a>
-          <a class="btn ghost lg" id="hero-portable-btn" href="https://github.com/Bireo/ShipForge/releases/latest">
-            <span data-i18n="hero.dlPort">便携版 (.zip)</span>
-            <span class="btn-meta mono" id="hero-port-size">4.7 MB</span>
-          </a>
-        </div>
-        <div class="hero-facts mono" id="hero-meta-line" data-i18n="hero.facts">
-          零外部运行时 · 112 项 Rust 单测 + 21 项前端门禁 · 事务自动回滚
-        </div>
+      <div class="hero-ambient" aria-hidden="true"></div>
 
-        <!-- Interactive 6-View Studio Stage -->
-        <div class="stage-shell">
-          <div class="stage-tabs" role="tablist" aria-label="ShipForge 工作区预览">
-            <button type="button" class="stage-tab active" role="tab" id="tab-overview" aria-selected="true" aria-controls="panel-overview" data-panel="panel-overview" data-shot="0" data-i18n="tab.overview">发版总览</button>
-            <button type="button" class="stage-tab" role="tab" id="tab-compile" aria-selected="false" aria-controls="panel-compile" data-panel="panel-compile" data-shot="1" tabindex="-1" data-i18n="tab.compile">编译与自检</button>
-            <button type="button" class="stage-tab" role="tab" id="tab-package" aria-selected="false" aria-controls="panel-package" data-panel="panel-package" data-shot="2" tabindex="-1" data-i18n="tab.package">分析与分包</button>
-            <button type="button" class="stage-tab" role="tab" id="tab-release" aria-selected="false" aria-controls="panel-release" data-panel="panel-release" data-shot="3" tabindex="-1" data-i18n="tab.release">多平台发布</button>
-            <button type="button" class="stage-tab" role="tab" id="tab-version" aria-selected="false" aria-controls="panel-version" data-panel="panel-version" data-shot="4" tabindex="-1" data-i18n="tab.version">版本与日志</button>
-            <button type="button" class="stage-tab" role="tab" id="tab-updater" aria-selected="false" aria-controls="panel-updater" data-panel="panel-updater" data-shot="5" tabindex="-1" data-i18n="tab.updater">在线更新</button>
-          </div>
-
-          <div class="stage-viewport">
-            <div class="stage-panel active" id="panel-overview" role="tabpanel" aria-labelledby="tab-overview">
-              <button type="button" class="shot-trigger" data-lb-index="0" aria-label="放大查看发版总览截图">
-                <img src="assets/screenshots/01-overview-pipeline.png" alt="ShipForge 发版总览界面" width="1280" height="800" fetchpriority="high">
-              </button>
-            </div>
-            <div class="stage-panel" id="panel-compile" role="tabpanel" aria-labelledby="tab-compile" hidden>
-              <button type="button" class="shot-trigger" data-lb-index="1" aria-label="放大查看编译与环境自检截图">
-                <img src="assets/screenshots/02-compile-prereq.png" alt="ShipForge 编译与环境自检界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
-            <div class="stage-panel" id="panel-package" role="tabpanel" aria-labelledby="tab-package" hidden>
-              <button type="button" class="shot-trigger" data-lb-index="2" aria-label="放大查看体积分析与敏感拦截截图">
-                <img src="assets/screenshots/03-package-split.png" alt="ShipForge 体积分析与敏感文件拦截界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
-            <div class="stage-panel" id="panel-release" role="tabpanel" aria-labelledby="tab-release" hidden>
-              <button type="button" class="shot-trigger" data-lb-index="3" aria-label="放大查看多平台发布管理截图">
-                <img src="assets/screenshots/04-release-repos.png" alt="ShipForge 多平台发布界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
-            <div class="stage-panel" id="panel-version" role="tabpanel" aria-labelledby="tab-version" hidden>
-              <button type="button" class="shot-trigger" data-lb-index="4" aria-label="放大查看双栏变更日志截图">
-                <img src="assets/screenshots/05-version-changelog.png" alt="ShipForge 双栏变更日志与版本同步界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
-            <div class="stage-panel" id="panel-updater" role="tabpanel" aria-labelledby="tab-updater" hidden>
-              <button type="button" class="shot-trigger" data-lb-index="5" aria-label="放大查看偏好设置与自动更新截图">
-                <img src="assets/screenshots/06-updater-prefs.png" alt="ShipForge 偏好设置与在线更新界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
-          </div>
-
-          <div class="stage-bar">
-            <span class="stage-caption" id="stage-caption" data-i18n="cap.0">发版总览：自动识别本地就绪成品，支持免重编部署推送与一键版本构建。</span>
-            <span class="stage-hint mono" data-i18n="stage.hint">点击截图可全屏放大查看</span>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <!-- Act II: 5-Step Release Pipeline Blueprint -->
-    <section class="section pipeline-section" id="pipeline">
       <div class="container">
-        <div class="sec-head">
-          <div class="sec-kicker mono">RELEASE PIPELINE</div>
-          <h2 data-i18n="pipe.heading">一条可控的本地发版流水线</h2>
-          <p class="sec-desc" data-i18n="pipe.desc">从代码改动到远端 Release 资产上线，每个阶段都有前置检查与失败回滚保护。</p>
+        <div class="hero-copy" data-scroll-hero="copy">
+          <h1 class="hero-title" data-i18n="hero.title">
+            本地构建、分包与多仓发布<br>收进一座 <span class="title-accent">Windows 轻筑工作台</span>
+          </h1>
+
+          <p class="hero-sub" data-i18n="hero.sub">
+            原生 Rust + Tauri v2，安装包仅 3.4 MB。自动识别 8 类常见工程与前置依赖，拦截 <code>.env</code>/密钥泄漏并按 95 MB 自动分卷，多文件版本号原子同步，流式发布至 GitHub / Gitee / GitLab / Gitea，自带 SHA-256 在线更新。
+          </p>
+
+          <div class="hero-cta">
+            <a class="btn primary lg" id="hero-dl-installer" href="https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-setup.exe">
+              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0 4-4m-4 4-4-4"/><path d="M5 19h14"/></svg>
+              <span data-i18n="hero.dlExe">下载安装版</span>
+              <span class="btn-meta mono" id="hero-exe-size">3.4 MB</span>
+            </a>
+            <a class="btn secondary lg" id="hero-dl-portable" href="https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-portable.zip">
+              <span data-i18n="hero.dlZip">便携免安装版</span>
+              <span class="btn-meta mono" id="hero-zip-size">4.7 MB</span>
+            </a>
+            <a class="btn film-cta lg" href="https://github.com/Bireo/ShipForge" target="_blank" rel="noopener">
+              <span class="film-play-dot" aria-hidden="true">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.26c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49 0-.24-.01-.88-.01-1.72-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.5-1.11-1.5-.91-.64.07-.63.07-.63 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.07 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.71 0 0 .84-.28 2.75 1.05A9.3 9.3 0 0 1 12 6.84c.85 0 1.71.12 2.51.35 1.91-1.33 2.75-1.05 2.75-1.05.55 1.41.2 2.45.1 2.71.64.72 1.03 1.63 1.03 2.75 0 3.94-2.34 4.81-4.57 5.06.36.32.68.94.68 1.9 0 1.37-.01 2.48-.01 2.82 0 .27.18.59.69.49A10.03 10.03 0 0 0 22 12.26C22 6.58 17.52 2 12 2Z"/></svg>
+              </span>
+              <span data-i18n="hero.viewGh">查看源码仓库</span>
+              <span class="btn-meta mono">MIT</span>
+            </a>
+          </div>
         </div>
 
-        <ol class="pipe-track">
-          <li class="pipe-node">
-            <span class="pipe-num mono">01</span>
-            <h3 data-i18n="pipe.s1.t">识别与对账</h3>
-            <p data-i18n="pipe.s1.d">解析语言、外壳、构建脚本与多文件版本号，同时兼容 Git 与非 Git 目录指纹监控。</p>
-          </li>
-          <li class="pipe-node">
-            <span class="pipe-num mono">02</span>
-            <h3 data-i18n="pipe.s2.t">前置自检</h3>
-            <p data-i18n="pipe.s2.d">仅核验当前项目所需工具链、本地依赖与磁盘余量，展示变更清单经确认后再补全。</p>
-          </li>
-          <li class="pipe-node">
-            <span class="pipe-num mono">03</span>
-            <h3 data-i18n="pipe.s3.t">构建与分包</h3>
-            <p data-i18n="pipe.s3.d">实时终端捕获构建日志，自动拦截 .env / 私钥等敏感文件，支持大包按平台阈值分卷。</p>
-          </li>
-          <li class="pipe-node">
-            <span class="pipe-num mono">04</span>
-            <h3 data-i18n="pipe.s4.t">校验与清单</h3>
-            <p data-i18n="pipe.s4.d">并行计算 SHA-256、生成 latest.json 与 SHA256SUMS.txt，校验版本对齐与文件完整性。</p>
-          </li>
-          <li class="pipe-node">
-            <span class="pipe-num mono">05</span>
-            <h3 data-i18n="pipe.s5.t">原子推送</h3>
-            <p data-i18n="pipe.s5.d">WinHTTP 流式上传至目标仓库，二进制优先、清单最后落盘；异常中断时保护已验收成品。</p>
-          </li>
-        </ol>
+        <!-- Interactive Runtime Window Stage with Scroll Perspective Unfold & Anchor Tab Underline -->
+        <div class="stage-perspective" data-scroll-hero="stage">
+          <div class="stage-tabs" role="tablist" aria-label="ShipForge runtime views">
+            <button type="button" role="tab" id="tab-overview" aria-selected="true" tabindex="0" data-panel="panel-overview" data-cap-zh="成品就绪感知 · 免重编直推 · 一键发版流水线" data-cap-en="Artifact readiness · Direct deploy · One-click pipeline" data-i18n="tabs.overview">发版总览</button>
+            <button type="button" role="tab" id="tab-compile" aria-selected="false" tabindex="-1" data-panel="panel-compile" data-cap-zh="8 类语言与桌面外壳矩阵 · 磁盘/内存/工具链前置自检" data-cap-en="8-stack framework matrix · Disk/RAM/toolchain preflight" data-i18n="tabs.compile">编译与环境</button>
+            <button type="button" role="tab" id="tab-package" aria-selected="false" tabindex="-1" data-panel="panel-package" data-cap-zh="体积构成分析 · .env/私钥防泄漏拦截 · 95 MB 自动分卷" data-cap-en="Bundle breakdown · Secret leak guard · 95 MB split ZIP" data-i18n="tabs.package">分析与分包</button>
+            <button type="button" role="tab" id="tab-release" aria-selected="false" tabindex="-1" data-panel="panel-release" data-cap-zh="GitHub / Gitee / GitLab / Gitea 流式上传 · DPAPI 凭据加密" data-cap-en="Multi-forge streaming upload · Windows DPAPI vault" data-i18n="tabs.release">多仓发布</button>
+          </div>
+
+          <div class="stage-frame" id="stage-frame">
+            <div class="window-chrome" aria-hidden="true">
+              <span class="win-brand">
+                <img src="assets/logo.svg" alt="" width="15" height="15">
+                <span id="win-chrome-title">ShipForge 轻筑 v1.5.1</span>
+              </span>
+              <span class="win-caption" id="stage-caption">成品就绪感知 · 免重编直推 · 一键发版流水线</span>
+              <span class="win-dots"><i></i><i></i><i></i></span>
+            </div>
+
+            <div class="stage-panels">
+              <div role="tabpanel" id="panel-overview" aria-labelledby="tab-overview" tabindex="0">
+                <button type="button" class="zoom-trigger zoom-stage" id="zoom-stage-overview" data-lightbox-id="overview" aria-label="点击放大查看：发版总览与免重编直推">
+                  <img id="img-overview" src="assets/screenshots/01-overview-pipeline.png" alt="ShipForge Release Overview and Pipeline UI" width="1600" height="1000" fetchpriority="high" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+              <div role="tabpanel" id="panel-compile" aria-labelledby="tab-compile" hidden="until-found">
+                <button type="button" class="zoom-trigger zoom-stage" id="zoom-stage-compile" data-lightbox-id="compile" aria-label="点击放大查看：编译预设与环境前置自检">
+                  <img src="assets/screenshots/02-compile-prereq.png" alt="ShipForge Compiler Matrix and Preflight Checks" width="1600" height="1000" fetchpriority="low" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+              <div role="tabpanel" id="panel-package" aria-labelledby="tab-package" hidden="until-found">
+                <button type="button" class="zoom-trigger zoom-stage" id="zoom-stage-package" data-lightbox-id="package" aria-label="点击放大查看：体积分析与防泄漏分包">
+                  <img src="assets/screenshots/03-package-split.png" alt="ShipForge Size Analyzer and Smart Packaging" width="1600" height="1000" fetchpriority="low" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+              <div role="tabpanel" id="panel-release" aria-labelledby="tab-release" hidden="until-found">
+                <button type="button" class="zoom-trigger zoom-stage" id="zoom-stage-release" data-lightbox-id="release" aria-label="点击放大查看：多仓库发布与在线回撤">
+                  <img src="assets/screenshots/04-release-repos.png" alt="ShipForge Multi-Forge Release Manager" width="1600" height="1000" fetchpriority="low" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <!-- Act II.5: Editorial Feature Showcase (Real Screenshots + Lightbox) -->
+    <!-- Act II: Editorial Feature Storytelling (Gradual Bidirectional Float-In + Layered Parallax) -->
     <section class="section showcase-section" id="showcase">
       <div class="container">
-        <div class="sec-head">
-          <div class="sec-kicker mono">WORKBENCH MODULES</div>
-          <h2 data-i18n="show.heading">面向日常高频场景的核心模块</h2>
-          <p class="sec-desc" data-i18n="show.desc">界面保持克制与低干扰，每个功能只保留单一清晰入口。点击任意截图可展开高清检视。</p>
+        <div class="section-head float-in">
+          <p class="eyebrow" data-i18n="story.eyebrow">END-TO-END PIPELINE · 核心发版链路</p>
+          <h2 data-i18n="story.title">从代码写完到用户收到更新，每一步可看、可控、可回滚</h2>
         </div>
 
-        <div class="story-list">
-          <article class="story-row">
-            <div class="story-copy">
-              <div class="story-tag mono">01 · PREFLIGHT &amp; PRESETS</div>
-              <h3 data-i18n="show.f1.t">项目级前置自检，不盲装无关工具</h3>
-              <p data-i18n="show.f1.d">按「语言 × 打包壳 × 子引擎」自动筛选当前项目真正依赖的编译器（MSVC / MinGW / rust-lld / NSIS / Node / Python 等），展示安装路径与体积并在确认后执行修复。</p>
-              <ul class="story-points">
-                <li data-i18n="show.f1.p1">支持 8 种主流开发语言与 Tauri / Electron / Wails / NSIS 等打包外壳</li>
-                <li data-i18n="show.f1.p2">自动内省本地 build.ps1 参数，保留自定义构建与测试工序</li>
-              </ul>
+        <div class="story-stack">
+          <!-- Story 01 -->
+          <article class="story-band float-group">
+            <div class="story-copy float-item" style="--float-delay: 20ms">
+              <span class="story-index mono">01</span>
+              <h3 data-i18n="story.s1Title">成品就绪感知与免重编直推</h3>
+              <p class="story-desc" data-i18n="story.s1Desc">
+                切入项目即比对当前版本号、源码树与 <code>release/</code> 产物状态。若成品已通过测试并对齐 <code>SHA256SUMS.txt</code> 与 <code>latest.json</code>，直接一键补齐校验并部署远端，不再重复浪费编译时间。
+              </p>
+              <div class="story-proof">
+                <strong class="mono">0 重复编译</strong>
+                <span data-i18n="story.s1Proof">多项目隔离运行态 · 跨工程不串日志、不串状态</span>
+              </div>
             </div>
-            <div class="story-media">
-              <button type="button" class="shot-trigger card-shot" data-lb-index="1" aria-label="放大查看编译与前置自检">
-                <img src="assets/screenshots/02-compile-prereq.png" alt="编译与前置自检界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
+            <figure class="story-visual float-item" style="--float-delay: 150ms">
+              <div class="media-shell">
+                <button type="button" class="zoom-trigger zoom-story" id="zoom-story-overview" data-lightbox-id="overview" aria-label="点击放大查看：发版总览与免重编直推">
+                  <img src="assets/screenshots/01-overview-pipeline.png" alt="ShipForge release overview and direct deploy" width="1600" height="1000" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+            </figure>
           </article>
 
-          <article class="story-row reverse">
-            <div class="story-copy">
-              <div class="story-tag mono">02 · ANALYZE &amp; SPLIT</div>
-              <h3 data-i18n="show.f2.t">打包前看清体积分布，默认拦截敏感文件</h3>
-              <p data-i18n="show.f2.d">扫描项目有效体积、按类型统计占比并列出 Top 大文件；发现 .env、私钥、证书或 .git 目录时主动预警并一键加入排除规则，支持按平台单文件限制自动分卷。</p>
-              <ul class="story-points">
-                <li data-i18n="show.f2.p1">自动跳过 target / node_modules / .git 缓存目录，避免误统计</li>
-                <li data-i18n="show.f2.p2">保存常用分包预设（便携 ZIP / tar.gz / 95 MB 兼容分卷）</li>
-              </ul>
+          <!-- Story 02 -->
+          <article class="story-band is-reversed float-group">
+            <div class="story-copy float-item" style="--float-delay: 150ms">
+              <span class="story-index mono">02</span>
+              <h3 data-i18n="story.s2Title">多框架编译预设与环境前置自检</h3>
+              <p class="story-desc" data-i18n="story.s2Desc">
+                自动探测 Rust / Node / Python / Go / .NET / Flutter / C++ / Java 与 Tauri / Electron / Wails / NSIS 桌面外壳。开编前核验磁盘余量、内存水位与工具链版本，支持一键托管下载便携版工具链，失败自动弹出健康诊断并原路回滚版本号。
+              </p>
+              <div class="story-proof">
+                <strong class="mono">8 语言 × 5 外壳</strong>
+                <span data-i18n="story.s2Proof">开编前挡住 90% 环境报错 · 进程树取消即刻释放锁</span>
+              </div>
             </div>
-            <div class="story-media">
-              <button type="button" class="shot-trigger card-shot" data-lb-index="2" aria-label="放大查看体积分析与分包">
-                <img src="assets/screenshots/03-package-split.png" alt="体积分析与敏感文件拦截界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
+            <figure class="story-visual float-item" style="--float-delay: 20ms">
+              <div class="media-shell">
+                <button type="button" class="zoom-trigger zoom-story" id="zoom-story-compile" data-lightbox-id="compile" aria-label="点击放大查看：多框架编译预设与环境前置自检">
+                  <img src="assets/screenshots/02-compile-prereq.png" alt="ShipForge framework matrix and preflight inspector" width="1600" height="1000" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+            </figure>
           </article>
 
-          <article class="story-row">
-            <div class="story-copy">
-              <div class="story-tag mono">03 · MULTI-REPO RELEASE</div>
-              <h3 data-i18n="show.f3.t">原生直连多代码平台，令牌系统级加密</h3>
-              <p data-i18n="show.f3.d">内置 GitHub、Gitee、GitLab 与 Gitea 原生适配器，支持左侧浏览历史线上版本、右侧一键创建或编辑 Release、切换草稿状态、撤回版本或删除单个附件。</p>
-              <ul class="story-points">
-                <li data-i18n="show.f3.p1">访问令牌经 Windows DPAPI 加密存储，本地零明文落盘</li>
-                <li data-i18n="show.f3.p2">发布前自动核验 latest.json 哈希与版本号，拦截残缺清单</li>
-              </ul>
+          <!-- Story 03 -->
+          <article class="story-band float-group">
+            <div class="story-copy float-item" style="--float-delay: 20ms">
+              <span class="story-index mono">03</span>
+              <h3 data-i18n="story.s3Title">体积分析、敏感拦截与大包智能分卷</h3>
+              <p class="story-desc" data-i18n="story.s3Desc">
+                毫秒级扫描产物分布并列出最大文件排行，自动跳过 <code>target/</code> 与 <code>node_modules/</code>。打包阶段默认拦截 <code>.env</code>、私钥证书与凭据文件，超过 Gitee 100 MB 单文件上限时按 95 MB 自动切分卷并附带自解压合并脚本。
+              </p>
+              <div class="story-proof">
+                <strong class="mono">95 MB 自动分卷</strong>
+                <span data-i18n="story.s3Proof">防密钥外泄硬门禁 · ZIP / 便携包模板一键复用</span>
+              </div>
             </div>
-            <div class="story-media">
-              <button type="button" class="shot-trigger card-shot" data-lb-index="3" aria-label="放大查看多平台发布管理">
-                <img src="assets/screenshots/04-release-repos.png" alt="多平台发布界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
+            <figure class="story-visual float-item" style="--float-delay: 150ms">
+              <div class="media-shell">
+                <button type="button" class="zoom-trigger zoom-story" id="zoom-story-package" data-lightbox-id="package" aria-label="点击放大查看：体积分析、防泄漏与智能分包">
+                  <img src="assets/screenshots/03-package-split.png" alt="ShipForge artifact analyzer and split packager" width="1600" height="1000" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+            </figure>
           </article>
 
-          <article class="story-row reverse">
-            <div class="story-copy">
-              <div class="story-tag mono">04 · VERSIONING &amp; AUTO-UPDATER</div>
-              <h3 data-i18n="show.f4.t">原子版本同步与内置官方自动更新</h3>
-              <p data-i18n="show.f4.d">双栏变更日志自动识别升序/降序结构回写 CHANGELOG，多配置文件原子同步版本号。同时 ShipForge 自身内置基于 GitHub Releases 的三通道容错自动更新，支持断点续传与失败自动回滚。</p>
-              <ul class="story-points">
-                <li data-i18n="show.f4.p1">同时覆盖 NSIS 安装版与便携 ZIP 版更新形态，强制校验 SHA-256 与文件头</li>
-                <li data-i18n="show.f4.p2">存在运行中构建/发版任务时拒绝中断安装，保障项目事务安全</li>
-              </ul>
+          <!-- Story 04 (Layered Counter-Scrolling Inset Parallax) -->
+          <article class="story-band is-reversed float-group">
+            <div class="story-copy float-item" style="--float-delay: 150ms">
+              <span class="story-index mono">04</span>
+              <h3 data-i18n="story.s4Title">多仓流式发布、版本同步与在线自动更新</h3>
+              <p class="story-desc" data-i18n="story.s4Desc">
+                统一管理 GitHub、Gitee、GitLab 与 Gitea 凭据（本机 Windows DPAPI 加密，明文不落盘），支持 64 KB 流式上传、原子 Draft 先传二进制再公开、在线编辑说明并同步 <code>latest.json</code>；同时内置三通道容错更新器，安装版静默升级、便携版备份替换且异常自动回滚。
+              </p>
+              <div class="story-proof">
+                <strong class="mono">4 平台 · 3 通道</strong>
+                <span data-i18n="story.s4Proof">WinHTTP 流式发版 · SHA-256 全链路核验与回滚</span>
+              </div>
             </div>
-            <div class="story-media">
-              <button type="button" class="shot-trigger card-shot" data-lb-index="5" aria-label="放大查看偏好设置与自动更新">
-                <img src="assets/screenshots/06-updater-prefs.png" alt="偏好设置与官方在线更新界面" width="1280" height="800" loading="lazy">
-              </button>
-            </div>
+            <figure class="story-visual visual-layered float-item" style="--float-delay: 20ms">
+              <div class="media-shell">
+                <button type="button" class="zoom-trigger zoom-story" id="zoom-story-release" data-lightbox-id="release" aria-label="点击放大查看：多仓库发布管理">
+                  <img src="assets/screenshots/04-release-repos.png" alt="ShipForge multi-platform release management" width="1600" height="1000" loading="lazy" decoding="async">
+                  <span class="zoom-hint" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                    <span data-i18n="lightbox.hint">查看大图</span>
+                  </span>
+                </button>
+              </div>
+              <div class="media-inset">
+                <button type="button" class="zoom-trigger zoom-inset" id="zoom-story-updater" data-lightbox-id="updater" aria-label="点击放大查看：内置在线更新与版本变更管理">
+                  <img src="assets/screenshots/06-updater-prefs.png" alt="ShipForge built-in SHA-256 auto updater" width="1600" height="1000" loading="lazy" decoding="async">
+                  <span class="zoom-hint zoom-hint-sm" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+                  </span>
+                </button>
+              </div>
+            </figure>
           </article>
         </div>
       </div>
     </section>
 
-    <!-- Act III: Measured Benchmarks & Language/Shell Matrix -->
+    <!-- Act III: Interactive Engineering Metrics Bento (Animated Bars + Count-Up Stat Quad) -->
     <section class="section bench-section" id="benchmarks">
       <div class="container">
-        <div class="sec-head row-head">
-          <div>
-            <div class="sec-kicker mono">MEASURED ENGINEERING METRICS</div>
-            <h2 data-i18n="bench.heading">实测指标与多框架矩阵</h2>
-            <p class="sec-desc" data-i18n="bench.desc">全部数据取自 ShipForge v1.4.0 Windows 11 x64 本机真实构建与测试日志。</p>
-          </div>
-          <div class="bench-switch" role="tablist" aria-label="指标视图切换">
-            <button type="button" class="bench-btn active" data-bench="gate" role="tab" aria-selected="true" data-i18n="bench.tabGate">测试与产物</button>
-            <button type="button" class="bench-btn" data-bench="speed" role="tab" aria-selected="false" data-i18n="bench.tabSpeed">构建与校验</button>
-          </div>
+        <div class="section-head float-in">
+          <p class="eyebrow" data-i18n="bench.eyebrow">ENGINEERING METRICS · 实测工程指标</p>
+          <h2 data-i18n="bench.title">原生轻量化与自动化门禁，每一项数据可源码复验</h2>
+          <p class="section-desc" data-i18n="bench.desc">
+            纯原生 Rust 后端 + 零框架 WebView2 前端（0 <code>node_modules</code>），所有门禁由 <code>build.ps1</code> 自动执行并强制 0 警告通过。
+          </p>
         </div>
 
-        <div class="kpi-grid" id="bench-kpi-grid">
-          <div class="kpi-card">
-            <div class="kpi-val mono" data-kpi="v1">3.40 MB</div>
-            <div class="kpi-label" data-kpi="l1" data-i18n="bench.k1">NSIS 安装包体积</div>
-            <div class="kpi-sub mono" data-kpi="s1">Portable ZIP 4.71 MB · Exe 11.32 MB</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-val mono" data-kpi="v2">112 + 21</div>
-            <div class="kpi-label" data-kpi="l2" data-i18n="bench.k2">Rust + 前端自动化门禁</div>
-            <div class="kpi-sub mono" data-kpi="s2">Release 严格 0 警告 · 全绿通过</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-val mono" data-kpi="v3">21.4 s</div>
-            <div class="kpi-label" data-kpi="l3" data-i18n="bench.k3">全量并行测试门禁耗时</div>
-            <div class="kpi-sub mono" data-kpi="s3">Rust 单测 + Release Check + 17 JS</div>
-          </div>
-          <div class="kpi-card">
-            <div class="kpi-val mono" data-kpi="v4">8 × 8</div>
-            <div class="kpi-label" data-kpi="l4" data-i18n="bench.k4">语言与打包外壳支持矩阵</div>
-            <div class="kpi-sub mono" data-kpi="s4">GitHub · Gitee · GitLab · Gitea</div>
-          </div>
-        </div>
+        <div class="bench-bento">
+          <!-- Interactive Segmented Bar Chart -->
+          <div class="bento-card bench-chart float-in" style="--float-delay: 40ms">
+            <div class="panel-head">
+              <div>
+                <h3 data-i18n="bench.chartTitle">典型体积与发版效率对比</h3>
+                <span class="panel-sub mono" id="bench-sub-label">Windows x64 Release · ShipForge v1.5.1</span>
+              </div>
+              <div class="seg-switch" role="group" aria-label="Metrics dataset">
+                <button type="button" class="seg-btn active" data-bench-mode="footprint" aria-pressed="true" data-i18n="bench.modeFootprint">体积占用</button>
+                <button type="button" class="seg-btn" data-bench-mode="pipeline" aria-pressed="false" data-i18n="bench.modePipeline">门禁耗时</button>
+              </div>
+            </div>
 
-        <div class="matrix-card">
-          <div class="matrix-row">
-            <span class="matrix-label" data-i18n="mat.langs">支持语言</span>
-            <div class="matrix-chips mono">
-              <span>Rust</span><span>Node.js / TS</span><span>Python</span><span>Go</span>
-              <span>C# / .NET</span><span>Dart / Flutter</span><span>C / C++ (CMake)</span><span>Java (Maven/Gradle)</span>
+            <div class="bar-list" id="bench-bars">
+              <div class="bar-row">
+                <div class="bar-meta">
+                  <span id="bm-lbl-0">NSIS 安装包 (x64-setup.exe)</span>
+                  <strong class="mono" id="bm-val-0">3.4 MB · 含图标与干净卸载</strong>
+                </div>
+                <div class="bar-track"><div class="bar-fill accent" id="bm-bar-0" style="--scale: 0.28"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta">
+                  <span id="bm-lbl-1">便携压缩包 (portable.zip)</span>
+                  <strong class="mono" id="bm-val-1">4.7 MB · 解压即用支持回滚</strong>
+                </div>
+                <div class="bar-track"><div class="bar-fill warm" id="bm-bar-1" style="--scale: 0.39"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta">
+                  <span id="bm-lbl-2">原生主程序 (shipforge.exe)</span>
+                  <strong class="mono" id="bm-val-2">11.3 MB · 单文件零外部 DLL</strong>
+                </div>
+                <div class="bar-track"><div class="bar-fill ink" id="bm-bar-2" style="--scale: 0.94"></div></div>
+              </div>
+              <div class="bar-row">
+                <div class="bar-meta">
+                  <span id="bm-lbl-3">前端构建依赖 (node_modules)</span>
+                  <strong class="mono" id="bm-val-3">0 KB · 原生 ES Modules</strong>
+                </div>
+                <div class="bar-track"><div class="bar-fill muted" id="bm-bar-3" style="--scale: 0.04"></div></div>
+              </div>
             </div>
+
+            <p class="bench-note" id="bench-mode-note">
+              * 复用系统内置 WebView2 运行时与 WinHTTP 网络栈，无需捆绑 100 MB+ Chromium，冷启动瞬间进入工作台。
+            </p>
           </div>
-          <div class="matrix-row">
-            <span class="matrix-label" data-i18n="mat.shells">打包外壳</span>
-            <div class="matrix-chips mono">
-              <span>Tauri v2</span><span>Electron</span><span>Wails</span><span>Flutter Desktop</span>
-              <span>PyInstaller</span><span>NSIS</span><span>Inno Setup</span><span>Native Split ZIP</span>
-            </div>
+
+          <!-- 4 Animated Count-Up Engineering Metrics -->
+          <div class="stat-quad">
+            <article class="bento-card stat-tile float-in" style="--float-delay: 110ms">
+              <div class="stat-num mono"><span class="count-up" data-val="3.40" data-dec="2">3.40</span><span class="stat-unit">MB</span></div>
+              <div class="stat-label" data-i18n="bench.s1Title">NSIS 安装包实测体积</div>
+              <p class="stat-meta" data-i18n="bench.s1Meta">Rust + Tauri v2 · 0 第三方网络与压缩外部依赖</p>
+            </article>
+
+            <article class="bento-card stat-tile float-in" style="--float-delay: 190ms">
+              <div class="stat-num mono"><span class="count-up" data-val="112" data-dec="0">112</span><span class="stat-unit">+</span></div>
+              <div class="stat-label" data-i18n="bench.s2Title">Rust 后端单测全绿</div>
+              <p class="stat-meta" data-i18n="bench.s2Meta">覆盖版本号、分包防泄漏、原子更新与回滚逻辑</p>
+            </article>
+
+            <article class="bento-card stat-tile float-in" style="--float-delay: 270ms">
+              <div class="stat-num mono"><span class="count-up" data-val="24" data-dec="0">24</span><span class="stat-unit">/24</span></div>
+              <div class="stat-label" data-i18n="bench.s3Title">前端与官网契约门禁</div>
+              <p class="stat-meta" data-i18n="bench.s3Meta">零警告 Release 编译 + 语法/字体/交互全自动检查</p>
+            </article>
+
+            <article class="bento-card stat-tile float-in" style="--float-delay: 350ms">
+              <div class="stat-num mono"><span class="count-up" data-val="4" data-dec="0">4</span><span class="stat-unit" data-i18n="bench.s4Unit">平台</span></div>
+              <div class="stat-label" data-i18n="bench.s4Title">原生流式多仓发布</div>
+              <p class="stat-meta" data-i18n="bench.s4Meta">GitHub · Gitee · GitLab · Gitea，凭据 DPAPI 加密</p>
+            </article>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Act IV: Focused Download + Checksum Copy + Developer Disclosure -->
+    <!-- Act IV: Focused Download + On-Demand Developer Architecture Disclosure -->
     <section class="section download-section" id="download">
       <div class="container">
-        <div class="sec-head">
-          <div class="sec-kicker mono">DOWNLOAD &amp; VERIFY</div>
-          <h2 data-i18n="dl.heading">下载 ShipForge</h2>
-          <p class="sec-desc" id="dl-release-sub" data-i18n="dl.desc">支持 Windows 10 / 11 (x64)。每次发包自动附带 SHA256SUMS.txt 与 latest.json。</p>
+        <div class="section-head float-in">
+          <p class="eyebrow" data-i18n="dl.eyebrow">GET SHIPFORGE · 立即获取</p>
+          <h2 data-i18n="dl.title">两个版本，30 秒接入你的 Windows 工程</h2>
+          <p class="section-desc" data-i18n="dl.desc">
+            项目列表与 DPAPI 加密凭据保存在 <code>%APPDATA%\ShipForge</code>，升级重装不丢配置；支持一键核验 SHA-256。
+          </p>
         </div>
 
         <div class="dl-grid">
-          <div class="dl-card featured">
-            <div class="dl-card-top">
-              <div>
-                <span class="dl-badge" data-i18n="dl.recommended">推荐</span>
-                <h3 data-i18n="dl.setupTitle">Windows 安装版 (NSIS)</h3>
-              </div>
-              <span class="mono dl-size" id="dl-setup-size">3.40 MB</span>
+          <article class="dl-card featured float-in" style="--float-delay: 60ms">
+            <div class="dl-top">
+              <span class="dl-tag" data-i18n="dl.rec">推荐 · 日常主力</span>
+              <span class="mono dl-ver" id="dl-exe-ver">v1.5.1</span>
             </div>
-            <p class="dl-file mono" id="dl-setup-file">ShipForge_1.4.0_x64-setup.exe</p>
-            <div class="dl-sha-row">
-              <code class="dl-sha mono" id="dl-setup-sha">SHA-256 加载中…</code>
-              <button type="button" class="copy-btn" data-copy-target="dl-setup-sha" data-i18n="dl.copy">复制</button>
-            </div>
-            <div class="dl-card-actions">
-              <a class="btn primary" id="dl-setup-link" href="https://github.com/Bireo/ShipForge/releases/latest" data-i18n="dl.btnSetup">下载安装程序</a>
-            </div>
-          </div>
+            <h3 data-i18n="dl.exeTitle">Windows 安装版 (NSIS x64)</h3>
+            <p data-i18n="dl.exeDesc">标准安装向导，自动创建桌面与开始菜单入口、干净卸载；后续更新可在软件内直接核验 SHA-256 静默升级。</p>
+            <div class="dl-file mono" id="dl-exe-name">ShipForge_1.5.1_x64-setup.exe · 3.4 MB</div>
+            <a class="btn primary full" id="dl-btn-exe" href="https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-setup.exe" data-i18n="dl.exeBtn">
+              下载安装版 (.exe)
+            </a>
+          </article>
 
-          <div class="dl-card">
-            <div class="dl-card-top">
-              <div>
-                <span class="dl-badge subtle" data-i18n="dl.portableTag">免安装</span>
-                <h3 data-i18n="dl.portTitle">Windows 便携版 (ZIP)</h3>
-              </div>
-              <span class="mono dl-size" id="dl-port-size">4.71 MB</span>
+          <article class="dl-card float-in" style="--float-delay: 170ms">
+            <div class="dl-top">
+              <span class="dl-tag subtle" data-i18n="dl.port">免安装 · 随身便携</span>
+              <span class="mono dl-ver" id="dl-zip-ver">v1.5.1</span>
             </div>
-            <p class="dl-file mono" id="dl-port-file">ShipForge_1.4.0_x64-portable.zip</p>
-            <div class="dl-sha-row">
-              <code class="dl-sha mono" id="dl-port-sha">SHA-256 加载中…</code>
-              <button type="button" class="copy-btn" data-copy-target="dl-port-sha" data-i18n="dl.copy">复制</button>
-            </div>
-            <div class="dl-card-actions">
-              <a class="btn ghost" id="dl-port-link" href="https://github.com/Bireo/ShipForge/releases/latest" data-i18n="dl.btnPort">下载便携压缩包</a>
-            </div>
-          </div>
+            <h3 data-i18n="dl.zipTitle">Windows 便携版 (Portable ZIP)</h3>
+            <p data-i18n="dl.zipDesc">解压到任意目录双击即用，不写注册表；内置更新器升级前自动备份旧版，写入异常自动原样回滚。</p>
+            <div class="dl-file mono" id="dl-zip-name">ShipForge_1.5.1_x64-portable.zip · 4.7 MB</div>
+            <a class="btn secondary full" id="dl-btn-zip" href="https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-portable.zip" data-i18n="dl.zipBtn">
+              下载便携版 (.zip)
+            </a>
+          </article>
         </div>
 
-        <details class="dev-disclosure" id="dev-disclosure">
-          <summary data-i18n="dev.summary">从源码构建与独立推送更新命令（面向开发者）</summary>
+        <!-- On-Demand Developer Architecture & Build Disclosure -->
+        <details class="dev-disclosure float-in" style="--float-delay: 240ms">
+          <summary>
+            <span class="dev-sum-title" data-i18n="dev.summary">开发者说明：三层架构、源码门禁与一键发版命令</span>
+            <span class="dev-sum-icon" aria-hidden="true"></span>
+          </summary>
           <div class="dev-body">
-            <div class="code-wrap">
-              <pre class="code-block mono" id="dev-cmd-code">git clone https://github.com/Bireo/ShipForge.git
-cd ShipForge
-
-# 1. 运行全量测试门禁（Rust + 前端 + 官网自测）
+            <div class="arch-strip">
+              <div class="arch-pill">
+                <span class="mono">01</span>
+                <strong data-i18n="dev.l1">零框架 WebView2 前端</strong>
+                <small>ES Modules · 0 node_modules · 24 项契约自测</small>
+              </div>
+              <div class="arch-pill">
+                <span class="mono">02</span>
+                <strong data-i18n="dev.l2">Rust 原生引擎 (Tauri v2)</strong>
+                <small>WinHTTP 64KB 流式上传 · DPAPI · 112 项单测</small>
+              </div>
+              <div class="arch-pill">
+                <span class="mono">03</span>
+                <strong data-i18n="dev.l3">三通道原子更新器</strong>
+                <small>latest.json / 302 / API · SHA-256 核验与回滚</small>
+              </div>
+            </div>
+            <div class="dev-cmd-wrap">
+              <pre class="code-block"><code id="dev-cmd-text">git clone https://github.com/Bireo/ShipForge.git &amp;&amp; cd ShipForge
 pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -TestsOnly
-
-# 2. 递增版本并全量打包安装版、便携版与 latest.json
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1 -Bump patch
-
-# 3. 原子推送更新到 GitHub Releases
-pwsh -NoProfile -ExecutionPolicy Bypass -File .\tools\publish-release.ps1 -UploadGitHub</pre>
-              <button type="button" class="copy-btn abs-copy" data-copy-target="dev-cmd-code" data-i18n="dl.copy">复制</button>
+pwsh -NoProfile -ExecutionPolicy Bypass -File .\build.ps1</code></pre>
+              <button type="button" class="btn ghost sm copy-btn" id="copy-dev-cmd" data-i18n="dev.copy">复制命令</button>
+              <span class="sr-only" id="copy-dev-status" role="status"></span>
             </div>
           </div>
         </details>
-
-        <div class="notes-panel" id="release-notes-box" hidden>
-          <div class="notes-head">
-            <h3 data-i18n="dl.notesTitle">最新版本变更说明</h3>
-            <a class="mono notes-link" href="https://github.com/Bireo/ShipForge/releases" target="_blank" rel="noopener" data-i18n="dl.allReleases">全部历史版本 →</a>
-          </div>
-          <pre class="notes-pre" id="release-notes-text"></pre>
-        </div>
       </div>
     </section>
   </main>
 
   <footer class="site-footer">
     <div class="container footer-inner">
-      <div class="footer-brand">
-        <img src="assets/logo.svg" alt="" width="20" height="20" aria-hidden="true">
-        <span>ShipForge · MIT License</span>
+      <div class="footer-left">
+        <span class="brand footer-brand" aria-label="ShipForge 轻筑">
+          <span class="brand-mark sm" aria-hidden="true">
+            <img src="assets/logo.svg" alt="" width="22" height="22" loading="lazy">
+          </span>
+          <strong>ShipForge</strong>
+        </span>
+        <span data-i18n="foot.note">MIT 开源 · 本地优先、零遥测、零广告</span>
       </div>
       <div class="footer-links">
+        <button type="button" class="footer-coffee-link" id="footer-coffee-btn" data-i18n="foot.coffee">请作者喝杯咖啡</button>
         <a href="https://github.com/Bireo/ShipForge" target="_blank" rel="noopener">GitHub</a>
-        <a href="https://github.com/Bireo/ShipForge/releases" target="_blank" rel="noopener">Releases</a>
+        <a href="https://github.com/Bireo/ShipForge/releases/latest" target="_blank" rel="noopener">Releases</a>
+        <a id="dl-sha-link" href="https://github.com/Bireo/ShipForge/releases/download/v1.5.1/SHA256SUMS.txt" target="_blank" rel="noopener">SHA256SUMS.txt</a>
         <a href="https://github.com/Bireo/ShipForge/issues" target="_blank" rel="noopener">Issues</a>
-        <button type="button" class="footer-btn" id="footer-coffee-btn" data-i18n="footer.sponsor">赞赏支持</button>
+        <a href="https://github.com/Bireo/ShipForge/blob/main/README.md" target="_blank" rel="noopener">中文文档</a>
+        <a href="https://github.com/Bireo/ShipForge/blob/main/README.en.md" target="_blank" rel="noopener">English Docs</a>
       </div>
     </div>
   </footer>
 
-  <!-- Sponsor Dialog (Native Top-Layer + Light Dismiss) -->
-  <dialog class="sf-dialog sponsor-dialog" id="sponsor-dialog" closedby="any" aria-labelledby="sponsor-title">
-    <div class="dialog-head">
-      <h2 id="sponsor-title" data-i18n="sponsor.title">赞赏支持</h2>
-      <button type="button" class="icon-btn" id="sponsor-close" aria-label="关闭">✕</button>
-    </div>
-    <p class="dialog-sub" data-i18n="sponsor.desc">ShipForge 永久免费开源、零广告。如果它帮你省下了打包和发版时间，可以请作者喝杯咖啡，或在 GitHub 点一颗 Star。</p>
-    <div class="qr-grid">
-      <figure class="qr-card">
-        <img src="assets/sponsor/wechat.jpg" alt="微信赞赏码" width="200" height="200" loading="lazy">
-        <figcaption data-i18n="sponsor.wechat">微信支付</figcaption>
-      </figure>
-      <figure class="qr-card">
-        <img src="assets/sponsor/alipay.jpg" alt="支付宝赞赏码" width="200" height="200" loading="lazy">
-        <figcaption data-i18n="sponsor.alipay">支付宝</figcaption>
-      </figure>
+  <!-- Sponsor / Buy Me a Coffee Modal Dialog -->
+  <dialog class="sponsor-dialog" id="sponsor-dialog" closedby="any" aria-labelledby="sponsor-title">
+    <div class="sponsor-sheet">
+      <div class="sponsor-head">
+        <div class="sponsor-badge" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3.5c0 1.1.8 1.4.8 2.5M12 3c0 1.1.8 1.4.8 2.5"/>
+            <path d="M5 9h11v6.2a4.8 4.8 0 0 1-4.8 4.8H9.8A4.8 4.8 0 0 1 5 15.2V9Z"/>
+            <path d="M16 10.5h1.8a2.7 2.7 0 0 1 0 5.4H16"/>
+            <path d="M4 21h14"/>
+          </svg>
+        </div>
+        <div class="sponsor-head-copy">
+          <h2 id="sponsor-title" data-i18n="sponsor.title">请作者喝杯咖啡</h2>
+          <p class="sponsor-sub" data-i18n="sponsor.sub">软件独立开发与长期维护不易，如果 ShipForge 轻筑帮你省下了重复打包和发版的时间，欢迎请作者喝杯咖啡，感谢支持！</p>
+        </div>
+        <button type="button" class="sponsor-close" id="sponsor-close-x" aria-label="关闭">
+          <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+        </button>
+      </div>
+
+      <div class="sponsor-grid">
+        <figure class="sponsor-card sponsor-wechat">
+          <div class="sponsor-qr-frame">
+            <img src="assets/sponsor/wechat.jpg" alt="微信赞赏码" width="240" height="320" loading="lazy" decoding="async">
+          </div>
+          <figcaption>
+            <span class="sponsor-dot" aria-hidden="true"></span>
+            <span data-i18n="sponsor.wechat">微信支付 · 扫一扫赞赏</span>
+          </figcaption>
+        </figure>
+        <figure class="sponsor-card sponsor-alipay">
+          <div class="sponsor-qr-frame">
+            <img src="assets/sponsor/alipay.jpg" alt="支付宝赞赏码" width="240" height="320" loading="lazy" decoding="async">
+          </div>
+          <figcaption>
+            <span class="sponsor-dot" aria-hidden="true"></span>
+            <span data-i18n="sponsor.alipay">支付宝 · 扫一扫赞赏</span>
+          </figcaption>
+        </figure>
+      </div>
+
+      <div class="sponsor-foot">
+        <p class="sponsor-note" data-i18n="sponsor.note">ShipForge 永久 MIT 开源免费、零广告 · 随心赞赏，在 GitHub 点 Star 同样是莫大的鼓励</p>
+        <button type="button" class="btn secondary sm" id="sponsor-close-btn" data-i18n="sponsor.close">谢谢，先逛逛</button>
+      </div>
     </div>
   </dialog>
 
-  <!-- Media Lightbox Dialog (Same-Document View Transition + Zoom/Pan + Keyboard) -->
-  <dialog class="sf-dialog media-lightbox" id="media-lightbox" closedby="any" aria-labelledby="lb-title">
-    <div class="lb-bar">
-      <div class="lb-meta">
-        <span class="lb-count mono" id="lb-count">1 / 6</span>
-        <span class="lb-title" id="lb-title">发版总览</span>
+  <!-- Shared-Element Full-Viewport Floating Image Lightbox Dialog -->
+  <dialog class="media-lightbox" id="media-lightbox" closedby="any" aria-labelledby="lb-title">
+    <div class="lb-shell" id="lb-shell">
+      <div class="lb-topbar">
+        <div class="lb-meta">
+          <span class="lb-counter mono" id="lb-counter">1 / 6</span>
+          <h2 class="lb-title" id="lb-title">发版总览与免重编直推</h2>
+        </div>
+        <div class="lb-actions">
+          <button type="button" class="lb-tool-btn" id="lb-zoom-btn" aria-pressed="false" aria-label="切换 2 倍细节放大">
+            <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></svg>
+            <span id="lb-zoom-label" data-i18n="lightbox.zoomIn">2× 细节</span>
+          </button>
+          <button type="button" class="dialog-close-btn lb-close-btn" id="lb-close-btn" aria-label="关闭">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="lb-tools">
-        <button type="button" class="icon-btn" id="lb-zoom-out" aria-label="缩小" title="缩小 (-)">−</button>
-        <button type="button" class="icon-btn mono" id="lb-zoom-reset" aria-label="重置缩放" title="重置缩放 (0)">100%</button>
-        <button type="button" class="icon-btn" id="lb-zoom-in" aria-label="放大" title="放大 (+)">+</button>
-        <button type="button" class="icon-btn" id="lb-prev" aria-label="上一张" title="上一张 (←)">‹</button>
-        <button type="button" class="icon-btn" id="lb-next" aria-label="下一张" title="下一张 (→)">›</button>
-        <button type="button" class="icon-btn" id="lb-close" aria-label="关闭预览" title="关闭 (Esc)">✕</button>
+
+      <div class="lb-body" id="lb-body">
+        <button type="button" class="lb-nav lb-prev" id="lb-prev" aria-label="上一张截图">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"/></svg>
+        </button>
+
+        <div class="lb-viewport" id="lb-viewport">
+          <img id="lb-img" class="lb-img" src="assets/screenshots/01-overview-pipeline.png" alt="发版总览与免重编直推" width="1600" height="1000" decoding="async">
+        </div>
+
+        <button type="button" class="lb-nav lb-next" id="lb-next" aria-label="下一张截图">
+          <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+        </button>
       </div>
+
+      <div class="lb-foot">
+        <p class="lb-caption" id="lb-caption">成品就绪感知 · 免重编直推 · 一键发版流水线</p>
+        <span class="lb-keys mono" data-i18n="lightbox.keys">← / → 切换 · 滚轮/点击缩放 · Esc 关闭</span>
+      </div>
+      <span class="sr-only" id="lb-live" aria-live="polite"></span>
     </div>
-    <div class="lb-stage" id="lb-stage">
-      <img id="lb-img" src="assets/screenshots/01-overview-pipeline.png" alt="">
-    </div>
-    <div class="lb-caption" id="lb-caption"></div>
   </dialog>
 
-  <div class="toast-live" id="site-toast" role="status" aria-live="polite" hidden></div>
-  <script src="app.js"></script>
+  <script src="app.js?v=20261127v2" defer></script>
 </body>
 </html>

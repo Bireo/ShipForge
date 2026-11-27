@@ -253,7 +253,7 @@ function renderClassifiedArtifactsTab(container, app, project, versions, artifac
                 return `<tr>
                   <td class="mono" style="word-break:break-all">
                     ${esc(a.name)}
-                    ${c.sha256Short ? `<span class="dim" style="font-size:10.5px"> (${esc(c.sha256Short)})</span>` : ""}
+                    ${c.sha256Short ? `<span class="dim" style="font-size:11.5px"> (${esc(c.sha256Short)})</span>` : ""}
                   </td>
                   <td><span class="tag ${stageCls}">${esc(c.stageLabel)}</span></td>
                   <td><span class="tag">${esc(kindLabel(a.kind))}</span></td>

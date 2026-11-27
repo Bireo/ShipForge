@@ -1,28 +1,28 @@
 {
   "schemaVersion": 1,
-  "version": "1.5.0",
+  "version": "1.5.1",
   "channel": "stable",
-  "pubDate": "2026-11-27T18:43:33+08:00",
+  "pubDate": "2026-11-27T19:18:14+08:00",
   "minVersion": "",
-  "notes": "## 1.5.0 (2026-11-27) —— 全自动静默更新小窗、线上日志与 latest.json 联动同步、仓库切换至 Bireo/ShipForge\n\n- **一键全自动更新，彻底告别手动卸载与安装向导**（`updater_host.rs`、`updater.rs`、`main.rs`、`preferences.js`）：\n  - 点击「一键自动更新」后，主程序自动校验安全边界并退出，无缝切换为独立置顶的品牌进度小窗（`shipforge-updater.exe` 独立宿主与隔离 WebView2 目录，零文件锁冲突）。\n  - 安装版自动通过 NSIS `/S /UPDATE /D=<app_dir>` 执行静默就地升级（跳过旧版卸载确认与向导页），便携版改用纯 Rust 原子备份替换与异常自动回滚，不再依赖隐藏 PowerShell 脚本；完成后自动拉起新版并异步清理临时宿主目录。\n  - 若遇安装目录权限受限，弹窗内直接提供「管理员重试」「手动安装」与「打开原版本」兜底动作，绝不中断失联。\n- **融合 ShipForge 官方 Logo 的专属进度弹窗**（`src/web/updater.html`）：\n  - 以 ShipForge 等距锻造立方体 Logo 为视觉中心：外圈采用语义化 `<progress>` 圆环进度光晕，内置动态旋转蓝图构造环、悬浮脉动熔铸琥珀核心与微抬精密顶盖动效，配合 4 步进度轨道（下载 · 校验 · 安装 · 启动）与浅/深双色自适应主题。\n  - 新增 `--preview-updater` 预览模式与端到端单元测试覆盖。\n- **线上 Release 说明与 `latest.json` 一键联动同步**（`repo_client.rs`、`packager.rs`、`main.rs`、`release.js`、`version.js`）：\n  - 在「产物与仓库 → 线上发行版」编辑面板新增「同步覆盖线上 latest.json」开关，保存 Release 说明时可选仅覆盖更新本地与线上 `latest.json`（不重传安装包/便携包，强制版本一致性与公网 URL / SHA-256 / 远端产物存在性安全门禁，支持 GitHub 含草稿 / Gitee / Gitea / GitLab）。\n  - 在「版本与源码 → 变更日志」撰写与阅读视图新增「同步线上日志」一键按钮，写入变更记录时自动同步本地同版本 `latest.json`。\n- **修复 Git 更新日志草拟器被 `docs:` 提交劫持的 Bug**（`git_ops.rs`、`main.rs`、`version.js`）：\n  - 当区间内存在 `pre-build` 快照或工作区源码/引擎改动且仅有 `docs:`/`chore:` 类提交时，优先在「更新内容」顶部列出源码与子引擎改动摘要及增删行数；草拟接口改为传入真实项目配置与目标版本号。\n- **GitHub 仓库与更新源迁移至 `Bireo/ShipForge`**（`updater.rs`、`updater_host.rs`、`preferences.js`、`tools/publish-release.ps1`、`website/`、`README`）：同步切换在线更新源白名单、发包脚本与 GitHub Pages（`https://bireo.github.io/ShipForge/`）。",
+  "notes": "## 1.5.1 (2026-11-27) —— 全应用字体清晰度深度修复与官网交互动效 / 配色焕新\n\n- **全应用字体渲染与可读性深度修复**（`styles.css`、`updater.html`、`app.js`、`compile.js`、`release.js`、`version.js`、`preferences.js`、`health-report.js`）：\n  - 修复 `--font-mono`（及更新小窗 `--mono`）缺少中文字体回退导致所有 `.mono` 标签（如 `v1.x 成品就绪`）、日志与路径在 Windows 上退化为 1-bit 位图新宋体糊字的根因，前置加入 `\"Microsoft YaHei UI\"` / `\"PingFang SC\"` / `\"Segoe UI\"`。\n  - 移除 `html, body` 上抑制 Windows DirectWrite ClearType 亚像素渲染的 `-webkit-font-smoothing: antialiased` 与 `text-rendering: optimizeLegibility`，修正更新日志预览区引用未定义 `var(--font-ui)` 的缺陷。\n  - 全面拉高浅/深双主题次级文字与语义状态色对比度（`--text-2-light`、`--text-3-light`、`--ok-light`、`--warn-light`、`--accent-text-light` 等均达 WCAG AA 标准），并将所有 `.tag`、状态条、表格表头、终端栏及行内 `10.5px–11px` 小字统一提升至清晰可读字号（`12px` / `font-weight: 500`）。\n  - 在 `api.selftest.mjs` 中新增第 24 项字体清晰度契约门禁防止回退。\n- **官网全套动效交互升级与全新矿雾松青 + 锻造黄铜配色**（`website/`、`docs/assets/logo.svg`、`docs/assets/social-preview.png`）：\n  - 切换为全新北欧矿雾松青（`#0d766e` / `#2dd4bf`）与锻造黄铜（`#b45309` / `#f59e0b`）双色视觉体系，并同步刷新 Logo、Social Preview 与 6 张高清晰实机截图。\n  - 完整落地阅读进度条、滚动自适应收缩顶栏、Hero 3D 透视展开舞台、CSS Anchor Positioning 滑动标签下划线、双向渐进景深浮入动画、Story 04 错层视差副图、可切换工程指标条形图 + 缓动数字递增卡片、双向共享元素 View Transitions 浮动大图灯箱与赞赏弹窗。",
   "installer": {
-    "file": "ShipForge_1.5.0_x64-setup.exe",
-    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-setup.exe",
-    "size": 3631859,
-    "sha256": "e86615a17c7b010c894dfbb72f7d42fcfbaa7a5c99878351c32118d3088078eb"
+    "file": "ShipForge_1.5.1_x64-setup.exe",
+    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-setup.exe",
+    "size": 3633694,
+    "sha256": "9693685526227ed1f5c60a6e0ed9fca7b0ea69d05e5e8cc84aa2c8d041a7921f"
   },
   "platforms": {
     "windows-x86_64": {
-      "file": "ShipForge_1.5.0_x64-setup.exe",
-      "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-setup.exe",
-      "size": 3631859,
-      "sha256": "e86615a17c7b010c894dfbb72f7d42fcfbaa7a5c99878351c32118d3088078eb"
+      "file": "ShipForge_1.5.1_x64-setup.exe",
+      "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-setup.exe",
+      "size": 3633694,
+      "sha256": "9693685526227ed1f5c60a6e0ed9fca7b0ea69d05e5e8cc84aa2c8d041a7921f"
     }
   },
   "portable": {
-    "file": "ShipForge_1.5.0_x64-portable.zip",
-    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.0/ShipForge_1.5.0_x64-portable.zip",
-    "size": 5249317,
-    "sha256": "2e49f7e74c9b88a7f25fc0bb05cb44bec12a1262a4a10eaa846423288602b1cf"
+    "file": "ShipForge_1.5.1_x64-portable.zip",
+    "url": "https://github.com/Bireo/ShipForge/releases/download/v1.5.1/ShipForge_1.5.1_x64-portable.zip",
+    "size": 5255059,
+    "sha256": "c0d5afa45c175f9bb8742ec320960fd81bb61d1b6c9d492a18c88286b5e502bf"
   }
 }

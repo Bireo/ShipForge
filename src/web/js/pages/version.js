@@ -148,7 +148,7 @@ function renderChangelogNotesTab(container, app, ov, epoch) {
                 <span class="notes-item-title mono">v${esc(item.version)}</span>
               </div>
               <div class="notes-item-snippet">${esc(title)}</div>
-              <div class="notes-item-snippet dim" style="font-size:11px">${esc(firstLine)}</div>
+              <div class="notes-item-snippet dim" style="font-size:12px">${esc(firstLine)}</div>
             </button>`;
           })
           .join("")
@@ -472,7 +472,7 @@ function renderVersionSyncTab(container, app, ov, epoch) {
                     (r) => `<div class="sf-row" style="min-height:40px;padding:8px 12px">
                       <div class="sf-row-main">
                         <div class="mono" style="font-size:12px;font-weight:600">${esc(r.path)}</div>
-                        <div class="dim" style="font-size:11px">${esc(r.format)}</div>
+                        <div class="dim" style="font-size:12px">${esc(r.format)}</div>
                       </div>
                       <span class="tag mono ${r.error ? "tag-err" : r.version === versions.current ? "tag-ok" : "tag-warn"}">
                         ${esc(r.error ? r.error : r.version)}
@@ -579,7 +579,7 @@ function renderVersionSyncTab(container, app, ov, epoch) {
                   <span class="mono">v${esc(b.version)}</span>
                   ${b.sealed ? `<span class="tag tag-ok">已封版</span>` : `<span class="tag">构建 ${b.buildCount} 次</span>`}
                 </div>
-                <div class="sf-row-desc mono" style="font-size:11px">基线 ${esc(b.baseGitSha || "-")} · ${b.changedFiles.length} 改动${b.notesDraft ? " · 有草稿" : ""}</div>
+                <div class="sf-row-desc mono" style="font-size:12px">基线 ${esc(b.baseGitSha || "-")} · ${b.changedFiles.length} 改动${b.notesDraft ? " · 有草稿" : ""}</div>
               </div>
               <div class="sf-row-ctrl" style="gap:4px">
                 <button class="btn btn-xs btn-ghost" data-load-ver="${esc(b.version)}" type="button">打开草稿</button>

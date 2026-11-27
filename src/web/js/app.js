@@ -535,7 +535,7 @@ export const App = {
         (s) => `<span class="pipe-step" data-status="${esc(s.status)}" title="${esc(s.message || "")}">
           <span class="dot ${s.status === "ok" ? "dot-ok" : s.status === "failed" ? "dot-err" : s.status === "running" ? "dot-warn" : ""}"></span>
           <span>${esc(s.name)}</span>
-          ${s.message ? `<span class="dim" style="font-size:11px">${esc(s.message)}</span>` : ""}
+          ${s.message ? `<span class="dim" style="font-size:12px">${esc(s.message)}</span>` : ""}
         </span>`
       )
       .join("");
@@ -688,7 +688,7 @@ export const App = {
                     ${it.version && it.version !== "0.0.0" ? `<span class="tag mono">v${esc(it.version)}</span>` : ""}
                     ${it.alreadyImported ? `<span class="tag tag-ok">已导入</span>` : ""}
                   </div>
-                  <div class="list-row-desc mono" style="font-size:11px">${esc(it.path)}${it.githubRepo ? ` · ${esc(it.githubRepo)}` : ""}</div>
+                  <div class="list-row-desc mono" style="font-size:12px">${esc(it.path)}${it.githubRepo ? ` · ${esc(it.githubRepo)}` : ""}</div>
                 </div>
               </div>
             </label>`

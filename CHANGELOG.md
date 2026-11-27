@@ -1,5 +1,16 @@
 # ShipForge 变更记录
 
+## 1.5.1 (2026-11-27) —— 全应用字体清晰度深度修复与官网交互动效 / 配色焕新
+
+- **全应用字体渲染与可读性深度修复**（`styles.css`、`updater.html`、`app.js`、`compile.js`、`release.js`、`version.js`、`preferences.js`、`health-report.js`）：
+  - 修复 `--font-mono`（及更新小窗 `--mono`）缺少中文字体回退导致所有 `.mono` 标签（如 `v1.x 成品就绪`）、日志与路径在 Windows 上退化为 1-bit 位图新宋体糊字的根因，前置加入 `"Microsoft YaHei UI"` / `"PingFang SC"` / `"Segoe UI"`。
+  - 移除 `html, body` 上抑制 Windows DirectWrite ClearType 亚像素渲染的 `-webkit-font-smoothing: antialiased` 与 `text-rendering: optimizeLegibility`，修正更新日志预览区引用未定义 `var(--font-ui)` 的缺陷。
+  - 全面拉高浅/深双主题次级文字与语义状态色对比度（`--text-2-light`、`--text-3-light`、`--ok-light`、`--warn-light`、`--accent-text-light` 等均达 WCAG AA 标准），并将所有 `.tag`、状态条、表格表头、终端栏及行内 `10.5px–11px` 小字统一提升至清晰可读字号（`12px` / `font-weight: 500`）。
+  - 在 `api.selftest.mjs` 中新增第 24 项字体清晰度契约门禁防止回退。
+- **官网全套动效交互升级与全新矿雾松青 + 锻造黄铜配色**（`website/`、`docs/assets/logo.svg`、`docs/assets/social-preview.png`）：
+  - 切换为全新北欧矿雾松青（`#0d766e` / `#2dd4bf`）与锻造黄铜（`#b45309` / `#f59e0b`）双色视觉体系，并同步刷新 Logo、Social Preview 与 6 张高清晰实机截图。
+  - 完整落地阅读进度条、滚动自适应收缩顶栏、Hero 3D 透视展开舞台、CSS Anchor Positioning 滑动标签下划线、双向渐进景深浮入动画、Story 04 错层视差副图、可切换工程指标条形图 + 缓动数字递增卡片、双向共享元素 View Transitions 浮动大图灯箱与赞赏弹窗。
+
 ## 1.5.0 (2026-11-27) —— 全自动静默更新小窗、线上日志与 latest.json 联动同步、仓库切换至 Bireo/ShipForge
 
 - **一键全自动更新，彻底告别手动卸载与安装向导**（`updater_host.rs`、`updater.rs`、`main.rs`、`preferences.js`）：
